@@ -48,6 +48,29 @@ resumed run keeps the switches it was left with.
 .venv/bin/python -m simlife run --no-serve --ticks 300000 --seed 1
 ```
 
+### Stage 3: evolve, then seed
+
+Worlds started from random networks rarely produce more than one family that
+can forage, so the contest between families seldom begins. The reliable way
+is two steps:
+
+1. **Evolve a source population** (a "nursery"): a headless run long enough
+   to cover the grace period, during which nothing competes.
+
+   ```sh
+   .venv/bin/python -m simlife run --no-serve --ticks 20000 --seed 11 --runs-dir runs
+   ```
+
+   A nursery is already provided at `runs/nursery` (seed 11, 449 members).
+
+2. **Seed contest worlds from it.** Each founding colony starts from one of
+   the nursery's survivors; families form by region when the new world's
+   grace period ends.
+
+   ```sh
+   .venv/bin/python -m simlife run --seed 1 --seed-from runs/nursery
+   ```
+
 ### Resuming a run
 
 ```sh
@@ -152,7 +175,7 @@ The engine is written so the whole simulation is one pure function,
 
 ```sh
 .venv/bin/pytest                 # engine, about a minute
-.venv/bin/pytest -m slow         # does a default world take hold? about 3 minutes
+.venv/bin/pytest -m slow         # do seeded worlds reach the contest? about 20 minutes
 cd viewer && npm test            # viewer
 ```
 
