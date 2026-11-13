@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Colony life</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f4f2ee;
+        --panel: #ffffff;
+        --world: #fbfaf7;
+        --text: #22252a;
+        --muted: #8a8f98;
+        --line: #d9d6cf;
+        --food: #4f9d4a;
+        --accent: #c2410c;
+        --series: #1d4ed8;
+        --overlay: #b45309;
+        --event: #a1a1aa;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #15171a;
+          --panel: #1d2024;
+          --world: #101214;
+          --text: #e6e7ea;
+          --muted: #7c828c;
+          --line: #33373d;
+          --food: #7cc576;
+          --accent: #fb923c;
+          --series: #7aa7ff;
+          --overlay: #fbbf24;
+          --event: #5b6068;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 14px/1.45 system-ui, -apple-system, sans-serif;
+      }
+      main {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 360px;
+        gap: 16px;
+        padding: 16px;
+        max-width: 1500px;
+        margin: 0 auto;
+      }
+      @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+      #world-wrap { aspect-ratio: 1; max-height: calc(100vh - 32px); margin: 0 auto; width: 100%; max-width: calc(100vh - 32px); }
+      #world { width: 100%; height: 100%; display: block; border: 1px solid var(--line); border-radius: 6px; }
+      aside { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; }
+      h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 8px; }
+      p { margin: 0 0 6px; }
+      .connection[data-state="disconnected"] { color: var(--accent); }
+      .connection[data-state="connected"], .run { color: var(--muted); }
+      .status { font-variant-numeric: tabular-nums; }
+      label { display: block; margin-top: 10px; }
+      label.check { display: flex; gap: 8px; align-items: baseline; }
+      input[type="range"], select { width: 100%; margin-top: 4px; }
+      output { font-variant-numeric: tabular-nums; font-weight: 600; }
+      button { font: inherit; padding: 5px 14px; }
+      #population canvas { width: 100%; display: block; }
+      #population .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+      #population .legend span::before { content: ""; display: inline-block; width: 18px; margin-right: 6px; vertical-align: middle; border-top: 2px solid var(--swatch); }
+      #population .legend span.dashed::before { border-top-style: dashed; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="world-wrap"><canvas id="world"></canvas></div>
+      <aside>
+        <section><h2>Run</h2><div id="controls"></div></section>
+        <section><h2>Population</h2><div id="population"></div></section>
+      </aside>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
