@@ -21,8 +21,9 @@ def test_snapshot_roundtrip_contains_only_the_living():
     assert list(a["colony_members"]) == [float(cfg.initial_members)] * cfg.initial_colonies
     assert list(a) == [
         "member_pos", "member_heading", "member_colony", "member_carrying",
-        "member_slot", "member_error", "colony_slot", "colony_nest", "colony_energy",
-        "colony_members", "food_pos",
+        "member_slot", "member_error", "member_family", "member_aggression", "colony_slot", "colony_nest", "colony_energy",
+        "colony_members", "colony_family", "food_pos", "strike_pos", "territory_owner",
+        "territory_strength",
     ]
 
 
@@ -95,3 +96,33 @@ def test_snapshot_carries_member_error_and_inspect():
     payload = {"slot": 5, "alive": True, "inputs": [0.5] * 10}
     h, _ = decode_snapshot(encode_snapshot(s, compute_metrics(s), {}, inspect=payload))
     assert h["inspect"] == payload
+
+
+# --- stage 3 -------------------------------------------------------------------
+
+
+def test_snapshot_carries_families_territory_and_strikes():
+    import jax.numpy as jnp
+    cfg = Config()
+    s = init_world(jax.random.key(0), cfg)
+    s = s._replace(
+        territory=s.territory.at[3, 10, 20].set(2.0).at[1, 10, 20].set(1.0),
+        striking=s.striking.at[4].set(True),
+        aggression=s.aggression.at[4].set(0.9),
+    )
+    h, a = decode_snapshot(encode_snapshot(s, compute_metrics(s), {}))
+    M = int(s.alive.sum())
+    assert h["n_families"] == 6
+    assert a["member_family"].shape == (M,) and a["colony_family"].shape == (18,)
+    assert sorted(set(a["colony_family"].tolist())) == [0, 1, 2, 3, 4, 5]
+    assert a["member_aggression"][4] == np.float32(0.9)
+    assert a["strike_pos"].shape == (1, 2) and np.allclose(a["strike_pos"][0], np.asarray(s.pos[4]))
+    assert a["territory_owner"].shape == (64, 64) and a["territory_strength"].shape == (64, 64)
+    assert a["territory_owner"][10, 20] == 3 and np.isclose(a["territory_strength"][10, 20], 2 / 3)
+    assert a["territory_owner"][0, 0] == -1
+
+
+def test_snapshot_of_a_world_with_no_strikes_has_an_empty_strike_array():
+    s = init_world(jax.random.key(0), Config())
+    _, a = decode_snapshot(encode_snapshot(s, compute_metrics(s), {}))
+    assert a["strike_pos"].shape == (0, 2)

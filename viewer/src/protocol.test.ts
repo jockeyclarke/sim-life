@@ -5,8 +5,8 @@ import { readFixture } from "./testFixture";
 test("decodes the engine's fixture", () => {
   const snap = decodeSnapshot(readFixture("snapshot.bin"));
   expect(snap.tick).toBe(0);
-  expect(snap.arrays.member_pos!.length).toBe(192 * 2);
-  expect(snap.shapes.colony_nest).toEqual([16, 2]);
+  expect(snap.arrays.member_pos!.length).toBe(snap.metrics.members * 2);
+  expect(snap.shapes.colony_nest).toEqual([snap.metrics.colonies, 2]);
   expect(snap.status.run_id).toBe("fixture");
   expect(snap.metrics.members).toBe(192);
   for (const v of snap.arrays.member_pos!) {
@@ -60,7 +60,7 @@ test("fixture carries an inspection and member errors", () => {
     expect(snap.inspect.inputs.length).toBe(10);
     expect(snap.inspect.weights.w3.length).toBe(6);
   }
-  expect(snap.arrays.member_error!.length).toBe(192);
+  expect(snap.arrays.member_error!.length).toBe(snap.metrics.members);
   expect(snap.status.learning).toBe(true);
   expect(snap.status.inheritance).toBe("learned");
 });
