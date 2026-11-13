@@ -113,8 +113,14 @@ These would make the project a failure even if it runs:
   one founding network shared by all of them. Six families of three nests
   each, with each family's nests near one another. **(call: the numbers
   and the clustering, both settings)**
+- **Where daughters go.** As in stages 1 and 2, a daughter colony's nest is
+  placed a fixed distance from its parent's, in a random direction. So a
+  family grows outward from its existing nests, and intruder nests arise
+  where a family's frontier nests split across a border.
 - Families can die out. If one family takes over the whole map, that is the
-  end of the story for that run (Paul's choice). A fresh start after total
+  end of the story for that run (Paul's choice): the run simply carries on
+  with that one family, nothing is restarted, and a "takeover" event is
+  recorded. **(call: carry on and record)** A fresh start after total
   extinction begins again with a full set of founding families.
 - **Upkeep on foreign ground:** a nest standing where another family's
   scent dominates pays an extra cost each tick, growing with how strongly
@@ -130,7 +136,11 @@ These would make the project a failure even if it runs:
   - the striker's colony pays a fixed cost for every strike, wherever it
     happens.
 
-  Nobody is killed by a strike. The home advantage plus the fixed cost make
+  Nobody is killed by a strike. Strikes do drain energy, so repeated
+  strikes can wear a colony down until it starves: that is how a family
+  drives out an intruder actively, alongside upkeep. Damage per strike is
+  small next to what a colony earns from food, so this is attrition, not
+  slaughter. **(call: strikes may starve a colony; tuning keeps it slow)** The home advantage plus the fixed cost make
   defending cheap and raiding expensive, which is what should let borders
   hold rather than turning the field into a killing ground. How aggressive
   members are is left entirely to evolution and learning.
@@ -253,7 +263,10 @@ setting and should not be expected to carry over to the default.
   because compiled array code needs fixed shapes. The same applies to
   colonies.
 - Randomness uses explicit keys, so a run is reproducible from its seed and
-  settings. **(call: reproducibility as a requirement)**
+  settings. **(call: reproducibility as a requirement)** The founding
+  world, including the founding families' networks and nest layout, depends
+  on the seed alone, never on the switches, so runs that differ only in a
+  switch start from the same world and can be overlaid.
 - The engine runs with or without a viewer attached, and can run faster
   than real time when nothing is watching.
 - State can be saved to disk and resumed. **(call)**
@@ -329,6 +342,16 @@ Each stage is usable on its own and is finished before the next begins.
    - **Fighting has a pattern** (hoped for, not guaranteed). Strikes happen
      mostly near borders, and members of one family differ in how
      aggressive they are.
+
+   These are computed, not judged by eye. **(call)** The run's history
+   records each family's territory share and member count, the number of
+   strikes split by whether they happened on the striker's own ground, foreign
+   ground or near a border, and each family's mean and spread of aggression.
+   Each colony's founding records its family and whether it was founded on
+   foreign ground, and its death is recorded too, so nest lifespans can be
+   compared afterwards. The earlier non-goal about not computing a measure of
+   specialisation still stands for roles in general; these are the specific
+   measures this stage's success needs.
 
 ## Left to the builder
 
