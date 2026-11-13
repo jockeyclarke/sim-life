@@ -31,6 +31,6 @@ status = {
 }
 OUT.parent.mkdir(parents=True, exist_ok=True)
 cfg = Config()
-inspect = inspect_entity(state, cfg, 0)  # a real inspection payload for the viewer's tests
+inspect = {**inspect_entity(state, cfg, 0), "selection": 1}  # a real inspection payload for the viewer's tests
 OUT.write_bytes(encode_snapshot(state, compute_metrics(state), status, inspect))
 print(f"wrote {OUT} ({OUT.stat().st_size} bytes)")

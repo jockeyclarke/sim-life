@@ -48,7 +48,9 @@ class SimServer:
         # slot AND the tick it was born, because slots are reused after death.
         self._selected: int | None = None
         self._selected_born = 0
+        self._selected_epoch = 0  # runner.extinctions when selected: a fresh start is a new world
         self._selected_died = False
+        self._selection_id = 0  # increases with every selection, so the viewer can tell them apart
 
     async def start(self, host: str, port: int) -> None:
         self._server = await ws_serve(self._handle, host, port)
@@ -109,23 +111,29 @@ class SimServer:
         """Choose the member to inspect. Anything that isn't a living member clears it."""
         state = self.runner.state
         self._selected_died = False
+        self._selection_id += 1
         if slot is None or slot >= state.alive.shape[0] or not bool(state.alive[slot]):
             self._selected = None
             return
         self._selected = slot
         self._selected_born = self._born(state, slot)
+        self._selected_epoch = self.runner.extinctions
 
     def inspection(self) -> dict | None:
         """The selected member's internals; a death notice once it has died; or None."""
         if self._selected is None:
             return None
         slot, state = self._selected, self.runner.state
-        same_member = bool(state.alive[slot]) and self._born(state, slot) == self._selected_born
+        same_member = (
+            bool(state.alive[slot])
+            and self._born(state, slot) == self._selected_born
+            and self.runner.extinctions == self._selected_epoch
+        )
         if self._selected_died or not same_member:
             # Stays "died" until a new selection, even if a newborn now holds the slot.
             self._selected_died = True
-            return {"slot": slot, "alive": False}
-        return inspect_entity(state, self.runner.cfg, slot)
+            return {"slot": slot, "alive": False, "selection": self._selection_id}
+        return {**inspect_entity(state, self.runner.cfg, slot), "selection": self._selection_id}
 
     # --- messages ------------------------------------------------------------
 

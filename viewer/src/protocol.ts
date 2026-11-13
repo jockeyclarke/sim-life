@@ -26,6 +26,8 @@ export interface Status {
 /** The selected member's internals. See engine/simlife/inspect.py. */
 export interface Inspection {
   slot: number;
+  /** Identifies this selection. A new one is issued each time a member is chosen, so the same slot chosen twice differs. */
+  selection: number;
   alive: true;
   colony: number;
   age: number;
@@ -47,6 +49,7 @@ export interface Inspection {
 /** The selected member has died. Its slot may since have been taken by a newborn. */
 export interface DeadInspection {
   slot: number;
+  selection: number;
   alive: false;
 }
 

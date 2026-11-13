@@ -42,6 +42,10 @@ def test_inspect_entity_is_json_ready_and_consistent():
 # --- the server's selection rules, without running its loop -------------------
 
 
+def died(d, slot):
+    return d is not None and d["slot"] == slot and d["alive"] is False
+
+
 @pytest.fixture
 def srv(tmp_path):
     runner = Runner(cfg, 0, Recorder(tmp_path, cfg, 0))
@@ -60,15 +64,15 @@ def test_selected_member_death_is_reported_not_replaced(srv):
     r = srv.runner
     srv.select(3)
     r.state = r.state._replace(alive=r.state.alive.at[3].set(False))
-    assert srv.inspection() == {"slot": 3, "alive": False}
+    assert died(srv.inspection(), 3)
     # a newborn takes the slot: still reported as died, even once it is older
     # than the member we were watching was
     r.state = r.state._replace(
         alive=r.state.alive.at[3].set(True), age=r.state.age.at[3].set(0)
     )
-    assert srv.inspection() == {"slot": 3, "alive": False}
+    assert died(srv.inspection(), 3)
     r.state = r.state._replace(age=r.state.age.at[3].set(999_999))
-    assert srv.inspection() == {"slot": 3, "alive": False}
+    assert died(srv.inspection(), 3)
 
 
 def test_slot_reused_between_two_looks_is_caught(srv):
@@ -79,7 +83,7 @@ def test_slot_reused_between_two_looks_is_caught(srv):
     r.state = r.state._replace(
         tick=r.state.tick + 500, age=r.state.age.at[3].set(400)
     )
-    assert srv.inspection() == {"slot": 3, "alive": False}
+    assert died(srv.inspection(), 3)
 
 
 def test_selected_member_keeps_being_inspected_as_it_ages(srv):
@@ -106,3 +110,23 @@ def test_select_in_an_extinct_world_clears_selection(srv):
     )
     srv.select(3)
     assert srv.inspection() is None
+
+
+def test_each_selection_has_its_own_identity(srv):
+    srv.select(3)
+    first = srv.inspection()["selection"]
+    srv.select(None)
+    srv.select(3)  # the same slot, chosen again
+    second = srv.inspection()["selection"]
+    assert second != first
+    r = srv.runner
+    r.state = r.state._replace(alive=r.state.alive.at[3].set(False))
+    assert srv.inspection()["selection"] == second  # a death notice names the same selection
+
+
+def test_a_fresh_start_makes_a_stale_selection_died(srv):
+    r = srv.runner
+    srv.select(3)
+    srv.inspection()
+    r.extinctions += 1  # every colony died and fresh ones began, even if slot 3 looks the same
+    assert died(srv.inspection(), 3)

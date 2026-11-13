@@ -58,3 +58,30 @@ test("name lists match the protocol's lengths", () => {
   expect(PREDICTED_NAMES.length).toBe(snap.inspect.predicted.length);
   expect(PREDICTED_NAMES).toEqual(INPUT_NAMES.slice(0, 6));
 });
+
+import { selectionChanged } from "./inspector";
+
+test("ErrorTrace.clear empties it", () => {
+  const trace = new ErrorTrace();
+  trace.push(1, 10, 0.5);
+  trace.clear();
+  expect(trace.points()).toEqual([]);
+  trace.push(1, 5, 0.3); // an earlier tick is accepted after a clear, as after an engine restart
+  expect(trace.points()).toEqual([[5, 0.3]]);
+});
+
+test("selectionChanged follows the server's selection, not the slot", () => {
+  const alive = (slot: number, selection: number) => ({ slot, selection, alive: true }) as never;
+  const dead = (slot: number, selection: number) => ({ slot, selection, alive: false }) as never;
+  expect(selectionChanged(null, alive(7, 1))).toBe(true);
+  expect(selectionChanged(1, alive(7, 1))).toBe(false);
+  expect(selectionChanged(1, dead(7, 1))).toBe(false); // the same member, now dead: keep its trace
+  expect(selectionChanged(1, alive(7, 2))).toBe(true); // same slot, a different member
+  expect(selectionChanged(1, null)).toBe(true); // deselected
+  expect(selectionChanged(null, null)).toBe(false);
+});
+
+test("the fixture's inspection carries a selection identity", () => {
+  const snap = decodeSnapshot(readFixture("snapshot.bin"));
+  expect(snap.inspect?.selection).toBe(1);
+});

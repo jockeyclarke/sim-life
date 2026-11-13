@@ -1,7 +1,7 @@
 // The inspector: one member's senses, activations, predictions, error and weights, live.
 
 import { divergingColor, drawHeatmap } from "./heatmap";
-import type { Inspection, Snapshot } from "./protocol";
+import type { DeadInspection, Inspection, Snapshot } from "./protocol";
 import { cssVar, fitCanvas } from "./theme";
 import { colonyColor } from "./worldView";
 
@@ -39,6 +39,20 @@ export class ErrorTrace {
   points(): [number, number][] {
     return this.data;
   }
+
+  clear(): void {
+    this.slot = null;
+    this.data = [];
+  }
+}
+
+/**
+ * Whether the inspector is now following a different member (or none).
+ * Members are told apart by the server's selection identity, never by slot:
+ * slots are reused after a death.
+ */
+export function selectionChanged(previous: number | null, inspect: Inspection | DeadInspection | null): boolean {
+  return (inspect?.selection ?? null) !== previous;
 }
 
 /** Elementwise now − then. A shape mismatch gives zeros in `now`'s shape. */
@@ -125,7 +139,7 @@ const HEADER_H = 14;
 export class Inspector {
   private readonly trace = new ErrorTrace();
   private baseline: Inspection["weights"] | null = null;
-  private baselineSlot: number | null = null;
+  private selection: number | null = null;
   private showChange = false;
   private last: Inspection | null = null;
 
@@ -188,23 +202,25 @@ export class Inspector {
 
   update(snap: Snapshot): void {
     const inspect = snap.inspect;
-    if (inspect === null) {
-      this.baselineSlot = null;
+    if (selectionChanged(this.selection, inspect)) {
+      // a different member, or none: nothing from the previous one carries over
+      this.selection = inspect?.selection ?? null;
+      this.trace.clear();
+      this.baseline = null;
       this.last = null;
+    }
+    if (inspect === null) {
       this.show(null, "click a member in the world to inspect it");
       return;
     }
     if (!inspect.alive) {
-      // keep the last picture and the error trace on screen
-      this.show(this.last, "this member has died");
+      // the same member, now dead: keep its last picture and error trace on screen
+      this.show(this.last, this.last ? "this member has died" : "that member has died");
       return;
     }
-    if (this.baselineSlot !== inspect.slot || this.baseline === null || this.last === null) {
-      this.baseline = structuredClone(inspect.weights);
-      this.baselineSlot = inspect.slot;
-    }
+    if (this.baseline === null) this.baseline = structuredClone(inspect.weights);
     this.last = inspect;
-    this.trace.push(inspect.slot, snap.tick, inspect.error_avg);
+    this.trace.push(inspect.selection, snap.tick, inspect.error_avg);
     this.show(inspect, "");
   }
 
