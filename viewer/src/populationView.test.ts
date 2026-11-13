@@ -78,3 +78,34 @@ test("a stage 1 history draws no points on the new charts", () => {
   expect(seriesOf(old, "pred_error")).toEqual([]);
   expect(seriesOf(old, "learning_rate")).toEqual([]);
 });
+
+import { familiesPresent, familySeries, strikeSeries } from "./populationView";
+
+const fam = (tick: number, shares: number[] | undefined, extra = {}) =>
+  ({ tick, family_territory: shares, family_members: shares?.map((s) => s * 100), ...extra }) as unknown as HistoryRecord;
+
+test("familySeries reads one family's share and skips records without family fields", () => {
+  const recs = [fam(100, [0.5, 0.2]), fam(200, undefined), { tick: 250, events: [] } as unknown as HistoryRecord, fam(300, [0.1, 0.4])];
+  expect(familySeries(recs, "family_territory", 1)).toEqual([[100, 0.2], [300, 0.4]]);
+  expect(familySeries(recs, "family_members", 0)).toEqual([[100, 50], [300, 10]]);
+  expect(familySeries(recs, "family_territory", 7)).toEqual([]);
+});
+
+test("a family at zero stays on the chart until the end", () => {
+  const recs = [fam(100, [0.5, 0.2, 0]), fam(200, [0.7, 0, 0]), fam(300, [0.9, 0, 0])];
+  expect(familySeries(recs, "family_territory", 1)).toEqual([[100, 0.2], [200, 0], [300, 0]]);
+  expect(familiesPresent(recs)).toEqual([0, 1]); // family 2 never held ground
+});
+
+test("strikeSeries sums the three kinds and skips older records", () => {
+  const recs = [
+    { tick: 100, strikes_own: 2, strikes_foreign: 1, strikes_border: 3 },
+    { tick: 200, members: 4 },
+  ] as unknown as HistoryRecord[];
+  expect(strikeSeries(recs)).toEqual([[100, 6]]);
+});
+
+test("eventTicks finds takeover events", () => {
+  const recs = [{ tick: 900, events: [{ event: "takeover", tick: 900, family: 2 }] }] as unknown as HistoryRecord[];
+  expect(eventTicks(recs, "takeover")).toEqual([900]);
+});

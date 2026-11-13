@@ -10,6 +10,10 @@ export interface Metrics {
   /** Mean prediction error and learning rate of living members. Absent in runs recorded before stage 2. */
   pred_error?: number;
   learning_rate?: number;
+  /** Stage 3; absent in earlier runs. Lists are indexed by family. */
+  families?: number;
+  family_members?: number[];
+  family_territory?: number[];
 }
 
 export interface Status {
@@ -67,6 +71,10 @@ export interface RunEvent {
  */
 export interface HistoryRecord extends Metrics {
   delivery_rate: number;
+  /** Strikes since the previous record, by ground (stage 3). */
+  strikes_own?: number;
+  strikes_foreign?: number;
+  strikes_border?: number;
   events?: RunEvent[];
 }
 
