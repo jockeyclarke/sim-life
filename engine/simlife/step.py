@@ -9,6 +9,7 @@ import jax.numpy as jnp
 
 from .brain import act_all
 from .config import Config
+from .learning import learn_phase
 from .lifecycle import age_and_die, grow, kill_dead_colonies, regrow_food, split
 from .physics import deliver, metabolise, move, pickup
 from .senses import observe
@@ -20,6 +21,7 @@ def step(state: WorldState, cfg: Config) -> WorldState:
     key, k_grow, k_split, k_food = jax.random.split(state.key, 4)
 
     obs = observe(state, cfg)  # (N, 10)
+    state = learn_phase(state, obs, cfg)  # score and correct last tick's predictions
     turn, speed, signal, memory = act_all(state.params, obs)  # every network at once
 
     alive = state.alive
