@@ -101,3 +101,55 @@ def grow(state: WorldState, cfg: Config, key: Array) -> WorldState:
         params=params,
         energy=state.energy - jnp.where(ok, cfg.birth_cost, 0.0),
     )
+
+
+def split(state: WorldState, cfg: Config, key: Array) -> WorldState:
+    """At most one colony splits per tick: half its members found a daughter.
+
+    Splitting moves members between colonies and never touches their weights.
+    """
+    N = cfg.capacity_members
+    k_pick, k_dir = jax.random.split(key)
+
+    counts = member_counts(state, cfg)
+    eligible = state.col_alive & (counts >= cfg.split_size)
+    do = eligible.any() & (~state.col_alive).any()
+    parent = jnp.argmax(eligible)  # lowest-index eligible colony
+    daughter = jnp.argmax(~state.col_alive)  # lowest free colony slot
+
+    # Rank the parent's members in random order and move the first half, so
+    # neither side can end up empty.
+    mine = state.alive & (state.colony == parent)
+    score = jnp.where(mine, jax.random.uniform(k_pick, (N,)), 2.0)
+    rank = jnp.zeros(N, jnp.int32).at[jnp.argsort(score)].set(jnp.arange(N))
+    moving = do & mine & (rank < counts[parent] // 2)
+
+    angle = jax.random.uniform(k_dir, (), maxval=2 * jnp.pi)
+    offset = cfg.split_distance * jnp.stack([jnp.cos(angle), jnp.sin(angle)])
+    half = state.energy[parent] / 2
+
+    def on_daughter(field: Array, value: Array) -> Array:
+        return jnp.where(do, field.at[daughter].set(value), field)
+
+    energy = on_daughter(state.energy.at[parent].set(half), half)
+    return state._replace(
+        colony=jnp.where(moving, daughter, state.colony).astype(jnp.int32),
+        nest=on_daughter(state.nest, wrap01(state.nest[parent] + offset)),
+        energy=jnp.where(do, energy, state.energy),
+        col_alive=on_daughter(state.col_alive, True),
+        col_generation=on_daughter(
+            state.col_generation, state.col_generation[parent] + 1
+        ),
+    )
+
+
+def regrow_food(state: WorldState, cfg: Config, key: Array) -> WorldState:
+    """Each eaten pellet may reappear somewhere in its patch. This rate is the scarcity."""
+    k_which, k_where = jax.random.split(key)
+    chance = jax.random.uniform(k_which, (cfg.capacity_food,))
+    revive = ~state.food_alive & (chance < cfg.food_regrow_prob)
+    fresh = patch_positions(k_where, state.patch_pos, cfg)
+    return state._replace(
+        food_pos=jnp.where(revive[:, None], fresh, state.food_pos),
+        food_alive=state.food_alive | revive,
+    )

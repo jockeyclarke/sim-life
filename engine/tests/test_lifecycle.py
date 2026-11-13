@@ -84,3 +84,72 @@ def test_grow_two_colonies_one_free_slot():
 def test_poor_colony_does_not_grow():
     s = rich_and_poor()._replace(energy=jnp.array([1.0, 1.0]))
     assert states_equal(grow(s, cfg, jax.random.key(0)), s)
+
+
+# --- splitting and food regrowth -------------------------------------------
+
+from helpers import food  # noqa: E402
+from simlife.lifecycle import regrow_food, split  # noqa: E402
+from simlife.senses import torus_distance, wrap_delta  # noqa: E402
+
+split_cfg = small_cfg(split_size=4)
+
+
+def ready_to_split():
+    """Colony 0 has split_size members and 40 energy; colony slot 1 is free."""
+    s = blank(split_cfg)
+    for i in range(4):
+        s = member(s, i, (0.3 + 0.01 * i, 0.3), colony=0, carrying=(i == 0))
+    return s._replace(
+        energy=jnp.array([40.0, 0.0]), col_alive=jnp.array([True, False])
+    )
+
+
+def test_split_partitions_members_and_energy():
+    s = ready_to_split()
+    s2 = split(s, split_cfg, jax.random.key(0))
+    d = int(jnp.argmax(s2.col_alive & ~s.col_alive))
+    n_parent = int((s2.alive & (s2.colony == 0)).sum())
+    n_d = int((s2.alive & (s2.colony == d)).sum())
+    assert n_parent + n_d == split_cfg.split_size and n_d > 0 and n_parent > 0
+    assert jnp.isclose(s2.energy[0], 20.0) and jnp.isclose(s2.energy[d], 20.0)
+    assert int(s2.col_generation[d]) == int(s.col_generation[0]) + 1
+    gap = jnp.linalg.norm(wrap_delta(s2.nest[d], s2.nest[0]))
+    assert jnp.isclose(gap, split_cfg.split_distance, atol=1e-5)
+    assert bool((s2.params["w1"] == s.params["w1"]).all())
+    assert bool((s2.pos == s.pos).all()) and bool((s2.carrying == s.carrying).all())
+
+
+def test_split_never_leaves_either_side_empty():
+    s = ready_to_split()
+    for seed in range(30):
+        s2 = split(s, split_cfg, jax.random.key(seed))
+        assert int((s2.alive & (s2.colony == 0)).sum()) == 2
+        assert int((s2.alive & (s2.colony == 1)).sum()) == 2
+
+
+def test_split_below_size_does_nothing():
+    s = ready_to_split()
+    s = s._replace(alive=s.alive.at[3].set(False))
+    assert states_equal(split(s, split_cfg, jax.random.key(0)), s)
+
+
+def test_split_when_colonies_full_does_nothing():
+    s = ready_to_split()._replace(col_alive=jnp.array([True, True]))
+    assert states_equal(split(s, split_cfg, jax.random.key(0)), s)
+
+
+def test_regrow_only_revives_dead_pellets_inside_their_patch():
+    c = small_cfg(food_regrow_prob=1.0)
+    s = food(blank(c), 0, (0.1, 0.9))  # one live pellet, far from the patch at (0.5, 0.5)
+    s2 = regrow_food(s, c, jax.random.key(0))
+    assert bool(s2.food_alive.all())
+    assert bool((s2.food_pos[0] == s.food_pos[0]).all())
+    dist = torus_distance(s2.food_pos[1:], s.patch_pos[0])
+    assert bool((dist <= c.patch_radius + 1e-6).all())
+
+
+def test_regrow_prob_zero_revives_nothing():
+    c = small_cfg(food_regrow_prob=0.0)
+    s = food(blank(c), 0, (0.1, 0.9))
+    assert states_equal(regrow_food(s, c, jax.random.key(0)), s)
