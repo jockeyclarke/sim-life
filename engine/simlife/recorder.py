@@ -21,6 +21,7 @@ from .config import Config
 from .state import WorldState, init_world
 
 _EXTRA_PREFIX = "_runner."
+STRIKE_KINDS = ("own", "foreign", "border")
 
 
 def save_state(path: Path, state: WorldState, extra: dict | None = None) -> None:
@@ -114,12 +115,15 @@ class Recorder:
         self.cfg = cfg
         self.seed = seed
         self._previous: tuple[int, int] | None = None  # (tick, delivered) of last record
+        self._previous_strikes = {kind: 0 for kind in STRIKE_KINDS}  # cumulative, at last record
         if _existing is not None:
             self.run_dir = Path(_existing)
             self.run_id = self.run_dir.name
             measured = [r for r in read_history(self.run_dir) if "delivered" in r]
             if measured:
                 self._previous = (measured[-1]["tick"], measured[-1]["delivered"])
+                for kind in STRIKE_KINDS:
+                    self._previous_strikes[kind] = measured[-1].get(f"strikes_{kind}_total", 0)
             return
 
         base = f"{time.strftime('%Y%m%d-%H%M%S')}-s{seed}"
@@ -151,6 +155,12 @@ class Recorder:
         self._previous = (metrics["tick"], metrics["delivered"])
 
         record = {**metrics, "delivery_rate": rate}
+        # strikes since the previous record, by the ground they happened on
+        for kind in STRIKE_KINDS:
+            total = metrics.get(f"strikes_{kind}_total")
+            if total is not None:
+                record[f"strikes_{kind}"] = total - self._previous_strikes[kind]
+                self._previous_strikes[kind] = total
         if events:
             record["events"] = list(events)
         with open(self.run_dir / "history.jsonl", "a") as f:

@@ -356,3 +356,38 @@ def test_cli_switch_flags(tmp_path):
     plain = make_runner(parse(["run", "--runs-dir", str(tmp_path)]))
     assert plain.status()["learning"] is True and plain.status()["inheritance"] == "learned"
     assert switch_events(plain.recorder.run_dir) == []
+
+
+# --- stage 3 -------------------------------------------------------------------
+
+from simlife.config import Config as _Config  # noqa: E402
+
+families_cfg = _Config(capacity_members=256, capacity_colonies=24, capacity_food=64)
+
+
+def takeovers(run_dir):
+    return [e for e in events_of(run_dir) if e["event"] == "takeover"]
+
+
+def test_takeover_event_written_once(tmp_path):
+    r = Runner(families_cfg, 0, Recorder(tmp_path, families_cfg, 0))
+    s = r.state
+    others = s.col_alive & (s.col_family != 2)
+    r.state = s._replace(col_alive=s.col_alive & ~others, alive=s.alive & ~others[s.colony])
+    r.advance(10)
+    r.advance(10)
+    events = takeovers(r.recorder.run_dir)
+    assert len(events) == 1 and events[0]["family"] == 2
+
+
+def test_fresh_start_keeps_cumulative_counters_and_dates_founders(tmp_path):
+    r = Runner(doomed, 0, Recorder(tmp_path, doomed, 0))
+    r.state = r.state._replace(strikes=jnp.array([5, 6, 7], jnp.int32),
+                               colonies_died=jnp.array([1, 2], jnp.int32),
+                               colony_life_total=jnp.array([10, 20], jnp.int32))
+    r.advance(5)
+    assert r.extinctions >= 1
+    s = r.state
+    assert s.strikes.tolist()[:3] >= [5, 6, 7]
+    assert int(s.colonies_died.sum()) >= 3 and int(s.colony_life_total.sum()) >= 30
+    assert bool((s.col_born[s.col_alive] > 0).all())
