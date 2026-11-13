@@ -8,6 +8,7 @@ import jax
 import jax.numpy as jnp
 from jax import Array
 
+from .brain import init_params
 from .config import Config
 
 
@@ -40,18 +41,6 @@ class WorldState(NamedTuple):
     patch_pos: Array  # (P, 2) f32
 
     delivered_total: Array  # () i32 pellets delivered to any nest, ever
-
-
-def random_params(key: Array, cfg: Config) -> dict:
-    """Random weights for one entity (no leading population axis)."""
-    k1, k2, k3, k4 = jax.random.split(key, 4)
-    s = cfg.init_sigma
-    return {
-        "w1": jax.random.normal(k1, (cfg.n_hidden, cfg.n_inputs)) * s,
-        "b1": jax.random.normal(k2, (cfg.n_hidden,)) * s,
-        "w2": jax.random.normal(k3, (cfg.n_actions, cfg.n_hidden)) * s,
-        "b2": jax.random.normal(k4, (cfg.n_actions,)) * s,
-    }
 
 
 def random_lifespan(key: Array, shape: tuple, cfg: Config) -> Array:
@@ -97,7 +86,7 @@ def init_world(key: Array, cfg: Config) -> WorldState:
     col_alive = jnp.arange(C) < cfg.initial_colonies
 
     # One random network per colony, copied to every member: a colony starts clonal.
-    founders = jax.vmap(lambda k: random_params(k, cfg))(jax.random.split(k_net, C))
+    founders = jax.vmap(lambda k: init_params(k, cfg))(jax.random.split(k_net, C))
     params = jax.tree.map(lambda a: a[colony], founders)
 
     lifespan = random_lifespan(k_life, (N,), cfg)
