@@ -9,6 +9,7 @@ N = cfg.capacity_members
 MEMBER_FIELDS = [
     "pos", "heading", "alive", "colony", "carrying", "age", "lifespan",
     "memory", "signal", "generation",
+    "lr", "has_prev", "prev_obs", "last_pred", "pred_error", "pred_error_avg",
 ]
 
 
@@ -63,6 +64,7 @@ def test_grow_never_overwrites_a_live_member():
         assert bool((getattr(s2, name)[s.alive] == getattr(s, name)[s.alive]).all()), name
     for name in s.params:
         assert bool((s2.params[name][s.alive] == s.params[name][s.alive]).all()), name
+        assert bool((s2.birth_params[name][s.alive] == s.birth_params[name][s.alive]).all()), name
 
 
 def test_grow_when_members_full_does_nothing():
@@ -153,3 +155,75 @@ def test_regrow_prob_zero_revives_nothing():
     c = small_cfg(food_regrow_prob=0.0)
     s = food(blank(c), 0, (0.1, 0.9))
     assert states_equal(regrow_food(s, c, jax.random.key(0)), s)
+
+
+# --- stage 2: inheritance of learned weights and learning rate -------------------
+
+quiet = small_cfg(mutation_sigma=1e-6)
+
+
+def learned_parent(inherit_learned: bool):
+    """Colony 0: one rich member whose current weights are its birth weights + 1 (as if learned)."""
+    s = member(blank(quiet), 0, (0.3, 0.3))
+    params = {k: v.at[0].add(1.0) for k, v in s.params.items()}
+    return s._replace(
+        params=params, energy=jnp.array([100.0, 0.0]),
+        col_alive=jnp.array([True, False]), inherit_learned=jnp.bool_(inherit_learned),
+    )
+
+
+def the_child(before, after):
+    return int(jnp.argmax(after.alive & ~before.alive))
+
+
+def test_child_inherits_learned_weights_by_default():
+    s = learned_parent(True)
+    s2 = grow(s, quiet, jax.random.key(0))
+    c = the_child(s, s2)
+    for k in s.params:
+        assert jnp.allclose(s2.params[k][c], s.params[k][0], atol=1e-4), k
+        assert bool((s2.birth_params[k][c] == s2.params[k][c]).all()), k
+        assert bool((s2.birth_params[k][0] == s.birth_params[k][0]).all()), k  # parent untouched
+
+
+def test_child_inherits_birth_weights_when_switched():
+    s = learned_parent(False)
+    s2 = grow(s, quiet, jax.random.key(0))
+    c = the_child(s, s2)
+    for k in s.params:
+        assert jnp.allclose(s2.params[k][c], s.birth_params[k][0], atol=1e-4), k
+        assert not jnp.allclose(s2.params[k][c], s.params[k][0], atol=0.5), k
+        assert bool((s2.birth_params[k][c] == s2.params[k][c]).all()), k
+
+
+def test_child_learning_rate_is_inherited_mutated_and_clipped():
+    s = learned_parent(True)
+    ratios = []
+    for seed in range(40):
+        s2 = grow(s, quiet, jax.random.key(seed))
+        lr = float(s2.lr[the_child(s, s2)])
+        assert 0 <= lr <= quiet.max_lr
+        ratios.append(lr / quiet.initial_lr)
+    assert len(set(ratios)) > 30  # mutated
+    assert 0.9 < sum(ratios) / len(ratios) < 1.1  # around the parent's
+    assert all(0.5 < r < 2.0 for r in ratios)
+
+    top = s._replace(lr=s.lr.at[0].set(quiet.max_lr))
+    for seed in range(20):
+        s2 = grow(top, quiet, jax.random.key(seed))
+        assert float(s2.lr[the_child(top, s2)]) <= quiet.max_lr
+
+
+def test_child_starts_with_no_previous_observation():
+    s = learned_parent(True)
+    n = quiet.capacity_members
+    s = s._replace(  # stale values in every slot, as a dead member would leave behind
+        has_prev=jnp.ones(n, bool), prev_obs=jnp.ones((n, 10)), last_pred=jnp.ones((n, 6)),
+        pred_error=jnp.ones(n), pred_error_avg=jnp.ones(n),
+    )
+    s2 = grow(s, quiet, jax.random.key(0))
+    c = the_child(s, s2)
+    assert not bool(s2.has_prev[c])
+    assert not bool(s2.prev_obs[c].any()) and not bool(s2.last_pred[c].any())
+    assert s2.pred_error[c] == 0 and s2.pred_error_avg[c] == 0
+    assert bool(s2.has_prev[0])  # the parent keeps its own

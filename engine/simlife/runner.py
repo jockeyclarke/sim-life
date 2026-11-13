@@ -101,7 +101,11 @@ class Runner:
             self.extinctions += 1
             key = jax.random.fold_in(jax.random.key(self.seed), self.extinctions)
             self.state = self._fresh_world(key)._replace(
-                tick=self.state.tick, delivered_total=self.state.delivered_total
+                tick=self.state.tick,
+                delivered_total=self.state.delivered_total,
+                # a fresh start is a new population, not a new experiment
+                learning_on=self.state.learning_on,
+                inherit_learned=self.state.inherit_learned,
             )
             self.extinct = False
             written.append(self.recorder.event({"event": "reseed", "tick": tick}))

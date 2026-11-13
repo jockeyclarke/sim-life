@@ -268,3 +268,16 @@ def test_cli_headless_run_saves_on_terminate(tmp_path):
     (run_dir,) = list(tmp_path.iterdir())
     (checkpoint,) = list((run_dir / "checkpoints").glob("state-*.npz"))
     assert int(checkpoint.stem.split("-")[1]) > 0
+
+
+# --- stage 2 -------------------------------------------------------------------
+
+import jax.numpy as jnp  # noqa: E402
+
+
+def test_fresh_world_after_extinction_keeps_the_switches(tmp_path):
+    r = Runner(doomed, 0, Recorder(tmp_path, doomed, 0))
+    r.state = r.state._replace(learning_on=jnp.bool_(False), inherit_learned=jnp.bool_(False))
+    r.advance(20)
+    assert r.extinctions >= 1
+    assert not bool(r.state.learning_on) and not bool(r.state.inherit_learned)

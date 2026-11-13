@@ -44,12 +44,12 @@ def grow(state: WorldState, cfg: Config, key: Array) -> WorldState:
     """At most one birth per colony: a random member divides, with mutation.
 
     The child is a copy of the parent's network plus small noise. This is the
-    only place weights change in stage 1, and nothing here judges the parent:
+    only place the action weights ever change, and nothing here judges the parent:
     it is chosen uniformly at random. Selection happens only because colonies
     that gather more energy divide more and starve less.
     """
     N, C = cfg.capacity_members, cfg.capacity_colonies
-    k_parent, k_mutate, k_heading, k_life = jax.random.split(key, 4)
+    k_parent, k_mutate, k_heading, k_life, k_lr = jax.random.split(key, 5)
 
     counts = member_counts(state, cfg)
     surplus = state.energy > cfg.birth_cost + cfg.reserve_per_member * counts
@@ -73,17 +73,24 @@ def grow(state: WorldState, cfg: Config, key: Array) -> WorldState:
     def put(field: Array, value: Array) -> Array:
         return field.at[slot].set(value, mode="drop")
 
+    # What a child copies is the inheritance switch: the parent's weights as
+    # they are now (including what it learned in life), or as they were at its
+    # own birth (learning discarded). Either way the child gets small noise on
+    # top, and those become the child's own birth weights.
     names = sorted(state.params)
     noise_keys = dict(zip(names, jax.random.split(k_mutate, len(names))))
-    params = {
-        name: put(
-            state.params[name],
-            state.params[name][parent]
-            + cfg.mutation_sigma
-            * jax.random.normal(noise_keys[name], state.params[name][parent].shape),
+    child = {}
+    for name in names:
+        source = jnp.where(
+            state.inherit_learned, state.params[name][parent], state.birth_params[name][parent]
         )
-        for name in names
-    }
+        noise = jax.random.normal(noise_keys[name], source.shape)
+        child[name] = source + cfg.mutation_sigma * noise
+
+    # The learning rate is inherited too, nudged up or down by a few percent,
+    # so evolution can turn learning up or down, or off.
+    nudge = jnp.exp(cfg.lr_mutation_sigma * jax.random.normal(k_lr, (C,)))
+    child_lr = jnp.clip(state.lr[parent] * nudge, 0.0, cfg.max_lr)
 
     return state._replace(
         alive=put(state.alive, jnp.ones(C, bool)),
@@ -98,7 +105,15 @@ def grow(state: WorldState, cfg: Config, key: Array) -> WorldState:
         memory=put(state.memory, jnp.zeros((C, 2))),
         signal=put(state.signal, jnp.zeros(C)),
         generation=put(state.generation, state.generation[parent] + 1),
-        params=params,
+        params={name: put(state.params[name], child[name]) for name in names},
+        birth_params={name: put(state.birth_params[name], child[name]) for name in names},
+        lr=put(state.lr, child_lr),
+        # a newborn has no previous observation, so it does not learn on its first tick
+        has_prev=put(state.has_prev, jnp.zeros(C, bool)),
+        prev_obs=put(state.prev_obs, jnp.zeros((C, cfg.n_inputs))),
+        last_pred=put(state.last_pred, jnp.zeros((C, cfg.n_predictions))),
+        pred_error=put(state.pred_error, jnp.zeros(C)),
+        pred_error_avg=put(state.pred_error_avg, jnp.zeros(C)),
         energy=state.energy - jnp.where(ok, cfg.birth_cost, 0.0),
     )
 
