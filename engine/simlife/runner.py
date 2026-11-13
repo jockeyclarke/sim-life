@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 import jax
+import jax.numpy as jnp
 
 from .config import Config
 from .metrics import compute_metrics
 from .recorder import Recorder, resume_run
 from .state import WorldState, init_world
 from .step import run_ticks
+
+
+# switch name -> the WorldState field that holds it
+SWITCHES = {"learning": "learning_on", "inherit_learned": "inherit_learned"}
 
 
 class Runner:
@@ -34,6 +40,9 @@ class Runner:
         self.extinct = False
         self.extinctions = extinctions
         self._last_checkpoint_tick = int(self.state.tick)
+        # advance() may run in a worker thread while a viewer flips a switch;
+        # the lock keeps a switch from being overwritten by a piece in flight.
+        self._lock = threading.Lock()
 
     @classmethod
     def resume(cls, run_dir: Path) -> "Runner":
@@ -50,7 +59,28 @@ class Runner:
             "extinct": self.extinct,
             "extinctions": self.extinctions,
             "reseed_on_extinction": self.reseed_on_extinction,
+            "learning": bool(self.state.learning_on),
+            "inheritance": "learned" if bool(self.state.inherit_learned) else "birth",
         }
+
+    def set_switch(self, name: str, value: bool) -> dict | None:
+        """Flip the learning or inheritance switch, from the next tick on.
+
+        Returns the history line recording the change, or None if the switch
+        already had that value.
+        """
+        if name not in SWITCHES:
+            raise ValueError(f"unknown switch {name!r}; expected one of {sorted(SWITCHES)}")
+        field = SWITCHES[name]
+        with self._lock:
+            if bool(getattr(self.state, field)) == bool(value):
+                return None
+            self.state = self.state._replace(**{field: jnp.bool_(value)})
+            event = {
+                "event": "switch", "name": name, "value": bool(value),
+                "tick": int(self.state.tick),
+            }
+            return self.recorder.event(event)
 
     def checkpoint(self) -> None:
         extra = {
@@ -71,19 +101,23 @@ class Runner:
         """
         written: list[dict] = []
         remaining = n
-        while remaining > 0 and self._ensure_living(written):
-            before = int(self.state.tick)
-            piece = min(remaining, self.record_interval - before % self.record_interval)
-            self.state = run_ticks(self.state, self.cfg, piece)
-            tick = int(self.state.tick)
-            remaining -= tick - before
+        while remaining > 0:
+            with self._lock:
+                if not self._ensure_living(written):
+                    break
+                before = int(self.state.tick)
+                piece = min(remaining, self.record_interval - before % self.record_interval)
+                self.state = run_ticks(self.state, self.cfg, piece)
+                tick = int(self.state.tick)
+                remaining -= tick - before
 
-            if tick > before and tick % self.record_interval == 0:
-                written.append(self.recorder.record(compute_metrics(self.state)))
-            interval = self.checkpoint_interval
-            if tick // interval > self._last_checkpoint_tick // interval:
-                self.checkpoint()
-        self._ensure_living(written)
+                if tick > before and tick % self.record_interval == 0:
+                    written.append(self.recorder.record(compute_metrics(self.state)))
+                interval = self.checkpoint_interval
+                if tick // interval > self._last_checkpoint_tick // interval:
+                    self.checkpoint()
+        with self._lock:
+            self._ensure_living(written)
         return written
 
     def _ensure_living(self, written: list[dict]) -> bool:

@@ -23,6 +23,7 @@ def test_metrics_are_plain_numbers():
         "tick": 0, "colonies": 4, "members": 48,
         "energy": pytest.approx(4 * cfg.initial_energy),
         "delivered": 0, "max_generation": 0,
+        "pred_error": 0.0, "learning_rate": pytest.approx(cfg.initial_lr),
     }
     json.dumps(m)
 
@@ -150,3 +151,21 @@ def test_cli_resume_of_older_run_is_a_one_line_error(tmp_path):
     assert out.returncode == 1
     assert "older version" in out.stderr and "Traceback" not in out.stderr
     assert len(out.stderr.strip().splitlines()) == 1
+
+
+def test_metrics_include_prediction_error_and_learning_rate():
+    s = init_world(jax.random.key(0), cfg)
+    m = compute_metrics(s)
+    assert m["pred_error"] == 0.0 and m["learning_rate"] == pytest.approx(cfg.initial_lr)
+    m = compute_metrics(run_ticks(s, cfg, 50))
+    assert m["pred_error"] > 0 and 0 < m["learning_rate"] <= cfg.max_lr
+    import json as _json
+    _json.dumps(m)
+
+
+def test_metrics_of_an_extinct_world_do_not_divide_by_zero():
+    import jax.numpy as jnp
+    s = init_world(jax.random.key(0), cfg)
+    s = s._replace(alive=jnp.zeros_like(s.alive), col_alive=jnp.zeros_like(s.col_alive))
+    m = compute_metrics(s)
+    assert m["pred_error"] == 0.0 and m["learning_rate"] == 0.0 and m["members"] == 0

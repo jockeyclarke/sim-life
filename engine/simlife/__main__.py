@@ -28,6 +28,11 @@ def build_parser() -> argparse.ArgumentParser:
                      help="run without the viewer server (requires --ticks)")
     run.add_argument("--no-reseed", action="store_true",
                      help="when every colony has died, stop instead of starting fresh ones")
+    run.add_argument("--no-learning", action="store_true",
+                     help="switch lifetime learning off (a pure-evolution run)")
+    run.add_argument("--inherit", choices=["learned", "birth"],
+                     help="what offspring copy: the parent's learned weights (the default "
+                          "for a new run) or the weights the parent was born with")
     run.add_argument("--host", default="127.0.0.1")
     run.add_argument("--port", type=int, default=8765)
     return parser
@@ -41,6 +46,11 @@ def make_runner(args: argparse.Namespace) -> Runner:
         runner = Runner(cfg, args.seed, Recorder(args.runs_dir, cfg, args.seed))
     if args.no_reseed:
         runner.reseed_on_extinction = False
+    # A resumed run keeps its saved switches unless a flag says otherwise.
+    if args.no_learning:
+        runner.set_switch("learning", False)
+    if args.inherit:
+        runner.set_switch("inherit_learned", args.inherit == "learned")
     return runner
 
 

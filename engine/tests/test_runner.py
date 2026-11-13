@@ -281,3 +281,78 @@ def test_fresh_world_after_extinction_keeps_the_switches(tmp_path):
     r.advance(20)
     assert r.extinctions >= 1
     assert not bool(r.state.learning_on) and not bool(r.state.inherit_learned)
+
+import dataclasses  # noqa: E402
+
+import pytest  # noqa: E402
+
+still = dataclasses.replace(  # no births or deaths: weight changes can only be learning
+    cfg, birth_cost=1e9, initial_energy=1e6, lifespan_mean=1_000_000, lifespan_jitter=0
+)
+
+
+def switch_events(run_dir):
+    return [e for e in events_of(run_dir) if e["event"] == "switch"]
+
+
+def test_set_switch_records_an_event_once(tmp_path):
+    r = Runner(cfg, 0, Recorder(tmp_path, cfg, 0))
+    assert r.status()["learning"] is True and r.status()["inheritance"] == "learned"
+    r.advance(30)
+    line = r.set_switch("learning", False)
+    event = {"event": "switch", "name": "learning", "value": False, "tick": 30}
+    assert line == {"tick": 30, "events": [event]}
+    assert r.set_switch("learning", False) is None
+    assert r.status()["learning"] is False and r.status()["inheritance"] == "learned"
+    r.set_switch("inherit_learned", False)
+    assert r.status()["inheritance"] == "birth"
+    assert [e["name"] for e in switch_events(r.recorder.run_dir)] == ["learning", "inherit_learned"]
+
+
+def test_switches_survive_checkpoint_and_resume(tmp_path):
+    r = Runner(cfg, 0, Recorder(tmp_path, cfg, 0))
+    r.set_switch("learning", False)
+    r.set_switch("inherit_learned", False)
+    r.advance(40)
+    r.checkpoint()
+    r2 = Runner.resume(r.recorder.run_dir)
+    assert r2.status()["learning"] is False and r2.status()["inheritance"] == "birth"
+    assert len(switch_events(r2.recorder.run_dir)) == 2
+
+
+def test_switch_takes_effect_on_the_next_tick(tmp_path):
+    r = Runner(still, 0, Recorder(tmp_path, still, 0))
+    r.advance(10)
+    learned = r.state.params["w1"]
+    r.set_switch("learning", False)
+    r.advance(20)
+    assert bool((r.state.params["w1"] == learned).all())
+    r.set_switch("learning", True)
+    r.advance(1)
+    assert bool((r.state.params["w1"] != learned).any())
+
+
+def test_set_switch_rejects_unknown_names(tmp_path):
+    r = Runner(cfg, 0, Recorder(tmp_path, cfg, 0))
+    with pytest.raises(ValueError, match="unknown switch"):
+        r.set_switch("tick", False)
+    with pytest.raises(ValueError, match="unknown switch"):
+        r.set_switch("alive", False)
+
+
+def test_cli_switch_flags(tmp_path):
+    parse = build_parser().parse_args
+    r = make_runner(parse(["run", "--no-learning", "--inherit", "birth", "--runs-dir", str(tmp_path)]))
+    assert r.status()["learning"] is False and r.status()["inheritance"] == "birth"
+    assert len(switch_events(r.recorder.run_dir)) == 2
+    r.advance(10)
+    r.checkpoint()
+
+    kept = make_runner(parse(["run", "--resume", str(r.recorder.run_dir)]))
+    assert kept.status()["learning"] is False and kept.status()["inheritance"] == "birth"
+    changed = make_runner(parse(["run", "--resume", str(r.recorder.run_dir), "--inherit", "learned"]))
+    assert changed.status()["learning"] is False and changed.status()["inheritance"] == "learned"
+
+    plain = make_runner(parse(["run", "--runs-dir", str(tmp_path)]))
+    assert plain.status()["learning"] is True and plain.status()["inheritance"] == "learned"
+    assert switch_events(plain.recorder.run_dir) == []
