@@ -391,3 +391,25 @@ test("eventTicks finds takeover events", () => {});
   - Takeovers and when they happened.
   State plainly which parts were met. Do not change a measure after seeing results.
 - [ ] **Step 4: Commit** `feat: stage 3 tuning and success check`.
+
+---
+
+## Added 2026-11-13, after tuning (Paul's choices)
+
+### Task 11: Families form when the grace period ends
+
+- `Config`: remove `family_spread` and `founder_variation`; keep `grace_ticks` (20,000).
+- `WorldState` gains `family_centre` (K,2) f32 and `founded` () i32 (the tick this world began).
+- `init_world`: nests uniform; one random network per colony; `family_centre` uniform; `col_family` = nearest centre (torus) of each nest.
+- Competition (upkeep, strikes) applies when `tick >= founded + grace_ticks`.
+- `form_families(state, cfg)` in `step`: on the tick `tick == founded + grace_ticks`, every colony's family becomes its nest's nearest centre and `territory` is zeroed.
+- `Runner`: a fresh start sets `founded` to the current tick; writes event `{"event": "families_formed", "tick"}` once per world when the grace period ends.
+- Tests: colonies independent at founding; family = nearest centre; families re-formed and scent cleared exactly at the grace tick and not before; fresh start restarts the grace period; event written once.
+
+### Task 12: Seed a new run from an earlier run's survivors
+
+- `init_world(key, cfg, founders: dict | None = None)`: when given, `founders` is a pool of networks (leading axis = survivors); each founding colony gets one drawn uniformly (by the world key).
+- `load_survivors(run_dir) -> tuple[dict, dict]` (pool params, pool lr): from the latest checkpoint, living members only. Raises `ValueError` naming the mismatch if the source's network shape differs from this `Config`.
+- `Recorder` writes the pool to `founders.npz` in the new run and `"seeded_from"` into `settings.json`; `resume_run` and fresh starts reuse it.
+- CLI: `--seed-from RUN_DIR`.
+- Tests: founders come from the pool; shape mismatch is a clear error; resume and fresh start reuse the pool; same seed and same pool give the same world.
