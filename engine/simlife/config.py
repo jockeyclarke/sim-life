@@ -66,6 +66,8 @@ class Config:
     # c % n_families; each family's founding nests lie near one another.
     n_families: int = 6
     family_spread: float = 0.08
+    founder_variation: float = 0.15  # each founding nest: family network + this much noise
+    grace_ticks: int = 20_000  # no upkeep or strikes before this tick
     territory_grid: int = 64
     mark_rate: float = 0.02  # scent each member lays per tick where it stands
     nest_mark: float = 0.2  # scent each nest lays per tick

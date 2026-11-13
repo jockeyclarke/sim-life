@@ -23,6 +23,7 @@ def test_default_world_bootstraps(tmp_path):
         took_hold.append(
             not runner.extinct and m["delivered"] > 0
             and m["max_generation"] >= 5 and has_split
+            and m["families"] >= 2  # competition is still going on
         )
         # scarcity, not array capacity, must be what limits the population
         assert m["members"] < 0.8 * cfg.capacity_members, (seed, m)

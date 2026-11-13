@@ -10,7 +10,7 @@ from simlife.state import init_world
 from simlife.step import run_ticks
 
 # three colonies: 0 and 2 are family 0, 1 is family 1; 8x8 territory grid
-cfg = small_cfg(capacity_colonies=3, initial_colonies=3, n_families=2, territory_grid=8)
+cfg = small_cfg(capacity_colonies=3, initial_colonies=3, n_families=2, territory_grid=8, grace_ticks=0)
 
 
 def world(territory_family=None):
@@ -83,7 +83,7 @@ def test_nobody_dies_from_a_strike():
 
 
 def test_everyone_maximally_aggressive_stays_finite():
-    c = Config()  # six families of three nests: foreigners do meet
+    c = Config(grace_ticks=0)  # six families of three nests: foreigners do meet
     s = init_world(jax.random.key(0), c)
     # aggression output = sigmoid(w2[5] . h + b2[5]); a huge bias pins it at 1
     params = dict(s.params)
@@ -94,3 +94,11 @@ def test_everyone_maximally_aggressive_stays_finite():
         if jnp.issubdtype(leaf.dtype, jnp.floating):
             assert bool(jnp.isfinite(leaf).all())
     assert int(s.strikes.sum()) > 0
+
+
+def test_no_strikes_during_the_grace_period():
+    c = dataclasses.replace(cfg, grace_ticks=100)
+    s = fighters(world(0), carrying=True)._replace(tick=jnp.int32(99))
+    s2 = strike(s, c)
+    assert not bool(s2.striking.any()) and bool(s2.carrying[1]) and bool((s2.energy == s.energy).all())
+    assert bool(strike(s._replace(tick=jnp.int32(100)), c).striking[0])

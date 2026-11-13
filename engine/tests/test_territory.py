@@ -12,7 +12,7 @@ from simlife.step import run_ticks
 from simlife.territory import cell_of, home_share, owner_grid, scent_at, update_territory
 
 # a small grid so cells are easy to reason about; nothing fades or spreads unless asked
-cfg = small_cfg(territory_grid=8, scent_fade=1.0, scent_spread=0.0, n_families=2)
+cfg = small_cfg(territory_grid=8, scent_fade=1.0, scent_spread=0.0, n_families=2, grace_ticks=0)
 G = 8
 
 
@@ -94,3 +94,14 @@ def test_territory_stays_finite_and_bounded_over_a_long_run():
     assert np.isfinite(t).all() and (t >= 0).all()
     ceiling = (c.capacity_members * c.mark_rate + c.capacity_colonies * c.nest_mark) / (1 - c.scent_fade)
     assert t.max() <= ceiling
+
+
+def test_no_upkeep_during_the_grace_period():
+    c = dataclasses.replace(cfg, grace_ticks=100)
+    s = member(blank(c), 0, (0.6, 0.6), colony=0)
+    y, x = divmod(int(cell_of(s.nest[:1], c)[0]), G)
+    foreign = s._replace(territory=jnp.zeros((2, G, G)).at[1, y, x].set(5.0), tick=jnp.int32(50))
+    no_speed = jnp.zeros(c.capacity_members)
+    assert jnp.isclose(metabolise(foreign, no_speed, c).energy[0], 10.0 - c.base_cost)
+    later = foreign._replace(tick=jnp.int32(100))
+    assert jnp.isclose(metabolise(later, no_speed, c).energy[0], 10.0 - c.base_cost - c.upkeep_rate)

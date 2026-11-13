@@ -122,10 +122,18 @@ def init_world(key: Array, cfg: Config) -> WorldState:
     nest = (centres[col_family] + offset) % 1.0
     nest = jnp.where(nest >= 1.0, 0.0, nest)
 
-    # One random network per family, copied to every member of every one of
-    # its nests: a family starts clonal.
-    founders = jax.vmap(lambda k: init_params(k, cfg))(jax.random.split(k_net, K))
-    params = jax.tree.map(lambda a: a[col_family[colony]], founders)
+    # One random network per family. Each founding nest starts from it plus a
+    # little noise, so a family's nests are related but not identical: several
+    # chances at a viable forager. The members of one nest are identical.
+    k_family, k_vary = jax.random.split(k_net)
+    families = jax.vmap(lambda k: init_params(k, cfg))(jax.random.split(k_family, K))
+    vary_keys = jax.random.split(k_vary, len(families))
+    nests = {
+        name: families[name][col_family]
+        + cfg.founder_variation * jax.random.normal(key, families[name][col_family].shape)
+        for name, key in zip(sorted(families), vary_keys)
+    }
+    params = jax.tree.map(lambda a: a[colony], nests)
 
     lifespan = random_lifespan(k_life, (N,), cfg)
     # Stagger starting ages so a founding cohort doesn't all die on one tick.

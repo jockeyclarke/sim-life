@@ -79,7 +79,6 @@ def test_founding_families():
     a = s.alive & (s.colony == 0)  # family 0
     b = s.alive & (s.colony == 6)  # also family 0
     c = s.alive & (s.colony == 1)  # family 1
-    assert bool((s.params["w1"][a][0] == s.params["w1"][b][0]).all())
     assert not bool((s.params["w1"][a][0] == s.params["w1"][c][0]).all())
     assert s.params["w2"].shape == (cfg.capacity_members, 6, 8)
     assert s.params["w3"].shape == (cfg.capacity_members, 9, 8)
@@ -106,3 +105,17 @@ def test_founding_world_ignores_switches():
     )
     assert bool((a.params["w1"] == b.params["w1"]).all())
     assert bool((a.nest == b.nest).all()) and bool((a.col_family == b.col_family).all())
+
+
+def test_founding_nests_of_a_family_are_related_but_differ():
+    cfg = Config()
+    s = init_world(jax.random.key(0), cfg)
+    w = s.params["w1"]
+    nest0 = w[s.alive & (s.colony == 0)]  # family 0
+    nest6 = w[s.alive & (s.colony == 6)]  # family 0, another nest
+    nest1 = w[s.alive & (s.colony == 1)]  # family 1
+    assert bool((nest0 == nest0[0]).all())  # a nest is clonal
+    within = float(jnp.abs(nest0[0] - nest6[0]).mean())
+    between = float(jnp.abs(nest0[0] - nest1[0]).mean())
+    assert 0 < within < 0.5 * between
+    assert bool((s.birth_params["w1"] == s.params["w1"]).all())
