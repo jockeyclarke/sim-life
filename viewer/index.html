@@ -43,13 +43,32 @@
       }
       main {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) 360px;
+        /* world | inspector | run and population */
+        grid-template-columns: minmax(0, 1fr) 360px 340px;
         gap: 16px;
         padding: 16px;
-        max-width: 1500px;
+        max-width: 1900px;
         margin: 0 auto;
+        align-items: start;
       }
-      @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+      /* Each side column scrolls on its own, so the world stays in view. */
+      aside {
+        position: sticky;
+        top: 16px;
+        max-height: calc(100vh - 32px);
+        overflow-y: auto;
+        overscroll-behavior: contain;
+      }
+      @media (max-width: 1250px) {
+        main { grid-template-columns: minmax(0, 1fr) 360px; }
+        #inspector-column { grid-column: 2; grid-row: 1; }
+        #side { grid-column: 2; grid-row: 2; position: static; max-height: none; }
+        #world-wrap { grid-row: 1 / span 2; }
+      }
+      @media (max-width: 900px) {
+        main { grid-template-columns: 1fr; }
+        #inspector-column, #side, #world-wrap { grid-column: 1; grid-row: auto; position: static; max-height: none; }
+      }
       #world-wrap { aspect-ratio: 1; max-height: calc(100vh - 32px); margin: 0 auto; width: 100%; max-width: calc(100vh - 32px); }
       #world { width: 100%; height: 100%; display: block; border: 1px solid var(--line); border-radius: 6px; }
       aside { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
@@ -91,9 +110,11 @@
   <body>
     <main>
       <div id="world-wrap"><canvas id="world"></canvas></div>
-      <aside>
-        <section><h2>Run</h2><div id="controls"></div></section>
+      <aside id="inspector-column">
         <section><h2>Inspector</h2><div id="inspector"></div></section>
+      </aside>
+      <aside id="side">
+        <section><h2>Run</h2><div id="controls"></div></section>
         <section><h2>Population</h2><div id="population"></div></section>
       </aside>
     </main>

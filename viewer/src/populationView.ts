@@ -85,7 +85,7 @@ const CHARTS: { field: Field; title: string }[] = [
 ];
 
 const HEIGHT = 92;
-const PAD = { left: 40, right: 8, top: 20, bottom: 6 };
+const PAD = { left: 48, right: 8, top: 20, bottom: 6 };
 const AXIS_HEIGHT = 16; // extra room under the last chart for tick labels
 
 /**

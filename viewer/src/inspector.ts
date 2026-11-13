@@ -274,7 +274,9 @@ export class Inspector {
     // axis: zero line and end labels
     ctx.strokeStyle = cssVar("--line");
     ctx.lineWidth = 1;
-    for (const v of lo < 0 ? [lo, 0, hi] : [0, hi]) {
+    // label the left end only when it's clear of the zero line, or the two labels collide
+    const labelled = lo < 0 && xOf(0) - xOf(lo) > 28 ? [lo, 0, hi] : [0, hi];
+    for (const v of labelled) {
       const x = Math.round(xOf(v)) + 0.5;
       ctx.beginPath();
       ctx.moveTo(x, 0);
