@@ -1,4 +1,5 @@
 import jax
+import numpy as np
 import jax.numpy as jnp
 
 from helpers import blank, member, small_cfg, states_equal
@@ -227,3 +228,130 @@ def test_child_starts_with_no_previous_observation():
     assert not bool(s2.prev_obs[c].any()) and not bool(s2.last_pred[c].any())
     assert s2.pred_error[c] == 0 and s2.pred_error_avg[c] == 0
     assert bool(s2.has_prev[0])  # the parent keeps its own
+
+
+# --- stage 3: two-parent crossover, families, colony records ---------------------
+
+pair_cfg = small_cfg(mutation_sigma=1e-6)
+
+
+def two_parents(gen_a=0, gen_b=0):
+    """Colony 0 has two members: A (slot 0) with every weight +1, B (slot 1) with -1."""
+    s = member(member(blank(pair_cfg), 0, (0.3, 0.3)), 1, (0.31, 0.3))
+    params = {k: v.at[0].set(1.0).at[1].set(-1.0) for k, v in s.params.items()}
+    return s._replace(
+        params=params, birth_params=params, energy=jnp.array([100.0, 0.0]),
+        col_alive=jnp.array([True, False]),
+        generation=s.generation.at[0].set(gen_a).at[1].set(gen_b),
+    )
+
+
+def unit_signs(p, c):
+    """For each hidden unit of member c: the sign of each of its four parts."""
+    w = {k: np.asarray(v[c]) for k, v in p.items()}
+    return [
+        (np.sign(w["w1"][h]).tolist(), np.sign(w["b1"][h]), np.sign(w["w2"][:, h]).tolist(),
+         np.sign(w["w3"][:, h]).tolist())
+        for h in range(w["b1"].shape[0])
+    ]
+
+
+def test_child_takes_each_hidden_unit_whole_from_one_parent():
+    s = two_parents()
+    seen = set()
+    for seed in range(40):
+        s2 = grow(s, pair_cfg, jax.random.key(seed))
+        c = the_child(s, s2)
+        for w1, b1, w2, w3 in unit_signs(s2.params, c):
+            values = set(w1) | {b1} | set(w2) | set(w3)
+            assert len(values) == 1, "a unit mixed its parents"
+            seen |= values
+    assert seen == {1.0, -1.0}
+
+
+def test_crossover_never_averages():
+    s = two_parents()
+    for seed in range(10):
+        s2 = grow(s, pair_cfg, jax.random.key(seed))
+        c = the_child(s, s2)
+        for k in s2.params:
+            assert bool((jnp.abs(s2.params[k][c]) > 0.5).all()), k
+
+
+def test_one_member_colony_has_one_parent():
+    s = learned_parent(True)  # colony 0 has a single member
+    s2 = grow(s, quiet, jax.random.key(3))
+    c = the_child(s, s2)
+    for k in s.params:
+        assert jnp.allclose(s2.params[k][c], s.params[k][0], atol=1e-4), k
+
+
+def test_parents_come_from_the_childs_own_colony():
+    s = two_parents()
+    s = member(s, 2, (0.7, 0.7), colony=1)
+    s = s._replace(
+        params={k: v.at[2].set(5.0) for k, v in s.params.items()},
+        col_alive=jnp.array([True, True]), energy=jnp.array([100.0, 0.0]),
+    )
+    for seed in range(20):
+        s2 = grow(s, pair_cfg, jax.random.key(seed))
+        c = the_child(s, s2)
+        assert bool((jnp.abs(s2.params["w1"][c]) < 2).all())
+
+
+def test_generation_is_one_more_than_the_older_parent():
+    s = two_parents(gen_a=3, gen_b=7)
+    for seed in range(30):
+        s2 = grow(s, pair_cfg, jax.random.key(seed))
+        c = the_child(s, s2)
+        has_b = any(u[1] < 0 for u in unit_signs(s2.params, c)) or bool((s2.params["b2"][c] < 0).any())
+        has_a = any(u[1] > 0 for u in unit_signs(s2.params, c)) or bool((s2.params["b2"][c] > 0).any())
+        gen = int(s2.generation[c])
+        assert gen in (4, 8)
+        if has_b:
+            assert gen == 8
+        if has_a and not has_b:
+            assert gen == 4
+
+
+def ready_family_split(territory_family):
+    s = ready_to_split()
+    t = jnp.zeros_like(s.territory)
+    if territory_family is not None:
+        t = t.at[territory_family].set(5.0)
+    return s._replace(territory=t, tick=jnp.int32(250))
+
+
+def test_daughter_belongs_to_its_parents_family_and_is_dated():
+    s = ready_family_split(0)
+    s = s._replace(col_family=s.col_family.at[0].set(4))
+    s2 = split(s, split_cfg, jax.random.key(0))
+    d = int(jnp.argmax(s2.col_alive & ~s.col_alive))
+    assert int(s2.col_family[d]) == 4 and int(s2.col_born[d]) == 250
+
+
+def test_daughter_founded_on_foreign_ground_is_marked():
+    home = split(ready_family_split(0), split_cfg, jax.random.key(0))
+    away = split(ready_family_split(1), split_cfg, jax.random.key(0))
+    assert not bool(home.col_foreign[1]) and bool(away.col_foreign[1])
+
+
+def test_colony_deaths_are_counted_by_founding_ground():
+    s = rich_and_poor()._replace(
+        energy=jnp.array([0.0, 0.0]), tick=jnp.int32(400),
+        col_born=jnp.array([100, 250]), col_foreign=jnp.array([False, True]),
+    )
+    s2 = kill_dead_colonies(s)
+    assert s2.colonies_died.tolist() == [1, 1]
+    assert s2.colony_life_total.tolist() == [300, 150]
+    assert kill_dead_colonies(s2).colonies_died.tolist() == [1, 1]  # counted once
+
+
+def test_children_mix_their_parents():
+    s = two_parents()
+    mixed = 0
+    for seed in range(40):
+        s2 = grow(s, pair_cfg, jax.random.key(seed))
+        signs = {u[1] for u in unit_signs(s2.params, the_child(s, s2))}
+        mixed += signs == {1.0, -1.0}
+    assert mixed >= 10  # A ≠ B about half the time, and then nearly every child mixes
