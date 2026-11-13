@@ -4,6 +4,7 @@ Engine -> viewer:  binary snapshot frames (see protocol.py), and JSON text
     {"type": "runs", "runs": [...], "current": id}
     {"type": "history", "run_id": id, "records": [...]}
     {"type": "record", "run_id": id, "record": {...}}
+A snapshot's header also carries "inspect": the selected member's internals.
 Viewer -> engine:  JSON text control messages (see protocol.parse_control).
 """
 
@@ -19,6 +20,7 @@ from pathlib import Path
 from websockets.asyncio.server import ServerConnection, serve as ws_serve
 from websockets.exceptions import ConnectionClosed
 
+from .inspect import inspect_entity
 from .metrics import compute_metrics
 from .protocol import encode_snapshot, parse_control
 from .recorder import list_runs, read_history
@@ -42,6 +44,11 @@ class SimServer:
         self._viewers: set[ServerConnection] = set()
         self._closing = False
         self._server = None
+        # One selection, shared by every viewer. A member is identified by its
+        # slot AND the tick it was born, because slots are reused after death.
+        self._selected: int | None = None
+        self._selected_born = 0
+        self._selected_died = False
 
     async def start(self, host: str, port: int) -> None:
         self._server = await ws_serve(self._handle, host, port)
@@ -92,6 +99,34 @@ class SimServer:
         # advance blocks while JAX computes, so it runs off the event loop
         return await asyncio.to_thread(self.runner.advance, n)
 
+    # --- selection -----------------------------------------------------------
+
+    @staticmethod
+    def _born(state, slot: int) -> int:
+        return int(state.tick) - int(state.age[slot])
+
+    def select(self, slot: int | None) -> None:
+        """Choose the member to inspect. Anything that isn't a living member clears it."""
+        state = self.runner.state
+        self._selected_died = False
+        if slot is None or slot >= state.alive.shape[0] or not bool(state.alive[slot]):
+            self._selected = None
+            return
+        self._selected = slot
+        self._selected_born = self._born(state, slot)
+
+    def inspection(self) -> dict | None:
+        """The selected member's internals; a death notice once it has died; or None."""
+        if self._selected is None:
+            return None
+        slot, state = self._selected, self.runner.state
+        same_member = bool(state.alive[slot]) and self._born(state, slot) == self._selected_born
+        if self._selected_died or not same_member:
+            # Stays "died" until a new selection, even if a newborn now holds the slot.
+            self._selected_died = True
+            return {"slot": slot, "alive": False}
+        return inspect_entity(state, self.runner.cfg, slot)
+
     # --- messages ------------------------------------------------------------
 
     def _snapshot(self) -> bytes:
@@ -101,7 +136,7 @@ class SimServer:
             "ticks_per_frame": self.ticks_per_frame,
         }
         state = self.runner.state
-        return encode_snapshot(state, compute_metrics(state), status)
+        return encode_snapshot(state, compute_metrics(state), status, self.inspection())
 
     def _runs_message(self) -> str:
         return json.dumps({
@@ -169,6 +204,15 @@ class SimServer:
             self.ticks_per_frame = control["ticks_per_frame"]
         elif kind == "reseed_on_extinction":
             self.runner.reseed_on_extinction = control["value"]
+        elif kind == "select":
+            self.select(control["slot"])
+        elif kind in ("learning", "inheritance"):
+            name = "learning" if kind == "learning" else "inherit_learned"
+            value = control["value"] if kind == "learning" else control["value"] == "learned"
+            # set_switch waits for the piece in flight, so keep it off the event loop
+            line = await asyncio.to_thread(self.runner.set_switch, name, value)
+            if line is not None:
+                await self._broadcast(self._record_message(line))  # charts mark the change
         # confirm the change to everyone, even while paused
         await self._broadcast(self._snapshot())
 

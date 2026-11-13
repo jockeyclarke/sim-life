@@ -20,7 +20,7 @@ def test_snapshot_roundtrip_contains_only_the_living():
     assert list(a["colony_members"]) == [12.0] * 16
     assert list(a) == [
         "member_pos", "member_heading", "member_colony", "member_carrying",
-        "member_slot", "colony_slot", "colony_nest", "colony_energy",
+        "member_slot", "member_error", "colony_slot", "colony_nest", "colony_energy",
         "colony_members", "food_pos",
     ]
 
@@ -65,3 +65,32 @@ def test_parse_control_clamps_speed_and_drops_extra_fields():
     assert parse_control('{"type":"speed","ticks_per_frame":-4}')["ticks_per_frame"] == 1
     assert parse_control('{"type":"pause","value":false,"x":1}') == {
         "type": "pause", "value": False}
+
+
+# --- stage 2 -------------------------------------------------------------------
+
+
+def test_parse_control_new_messages():
+    assert parse_control('{"type":"learning","value":false}') == {"type": "learning", "value": False}
+    assert parse_control('{"type":"inheritance","value":"birth"}') == {
+        "type": "inheritance", "value": "birth"}
+    assert parse_control('{"type":"select","slot":17}') == {"type": "select", "slot": 17}
+    assert parse_control('{"type":"select","slot":null}') == {"type": "select", "slot": None}
+    for bad in [
+        '{"type":"select","slot":-1}', '{"type":"select","slot":true}',
+        '{"type":"select","slot":1.5}', '{"type":"select","slot":"3"}', '{"type":"select"}',
+        '{"type":"inheritance","value":"other"}', '{"type":"inheritance","value":true}',
+        '{"type":"learning","value":1}', '{"type":"learning"}',
+    ]:
+        assert parse_control(bad) is None, bad
+
+
+def test_snapshot_carries_member_error_and_inspect():
+    s = init_world(jax.random.key(0), Config())
+    s = s._replace(pred_error_avg=s.pred_error_avg.at[5].set(0.25))
+    h, a = decode_snapshot(encode_snapshot(s, compute_metrics(s), {}))
+    assert h["inspect"] is None
+    assert a["member_error"].shape == (192,) and a["member_error"][5] == 0.25
+    payload = {"slot": 5, "alive": True, "inputs": [0.5] * 10}
+    h, _ = decode_snapshot(encode_snapshot(s, compute_metrics(s), {}, inspect=payload))
+    assert h["inspect"] == payload

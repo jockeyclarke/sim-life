@@ -22,7 +22,10 @@ from .state import WorldState
 MAX_TICKS_PER_FRAME = 1000
 
 
-def encode_snapshot(state: WorldState, metrics: dict, status: dict) -> bytes:
+def encode_snapshot(
+    state: WorldState, metrics: dict, status: dict, inspect: dict | None = None
+) -> bytes:
+    """`inspect` is the selected member's internals (see inspect.py), or None."""
     alive = np.asarray(state.alive)
     col_alive = np.asarray(state.col_alive)
     food_alive = np.asarray(state.food_alive)
@@ -35,6 +38,7 @@ def encode_snapshot(state: WorldState, metrics: dict, status: dict) -> bytes:
         ("member_colony", colony[alive]),
         ("member_carrying", np.asarray(state.carrying)[alive]),
         ("member_slot", np.flatnonzero(alive)),
+        ("member_error", np.asarray(state.pred_error_avg)[alive]),
         ("colony_slot", np.flatnonzero(col_alive)),
         ("colony_nest", np.asarray(state.nest)[col_alive]),
         ("colony_energy", np.asarray(state.energy)[col_alive]),
@@ -46,6 +50,7 @@ def encode_snapshot(state: WorldState, metrics: dict, status: dict) -> bytes:
         "tick": int(state.tick),
         "metrics": metrics,
         "status": status,
+        "inspect": inspect,
         "arrays": [{"name": name, "shape": list(a.shape)} for name, a in arrays],
     }
     head = json.dumps(header).encode()
@@ -86,7 +91,17 @@ def parse_control(text: str) -> dict | None:
     if not isinstance(kind, str):
         return None
 
-    if kind in ("pause", "reseed_on_extinction"):
+    if kind == "inheritance":
+        value = message.get("value")
+        return {"type": kind, "value": value} if value in ("learned", "birth") else None
+    if kind == "select":
+        if "slot" not in message:
+            return None
+        slot = message["slot"]
+        if slot is None or (_is_int(slot) and slot >= 0):
+            return {"type": kind, "slot": slot}
+        return None
+    if kind in ("pause", "reseed_on_extinction", "learning"):
         value = message.get("value")
         return {"type": kind, "value": value} if isinstance(value, bool) else None
     if kind == "speed":

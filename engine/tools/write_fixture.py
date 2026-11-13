@@ -11,6 +11,7 @@ from pathlib import Path
 import jax
 
 from simlife.config import Config
+from simlife.inspect import inspect_entity
 from simlife.metrics import compute_metrics
 from simlife.protocol import encode_snapshot
 from simlife.state import init_world
@@ -25,7 +26,11 @@ status = {
     "reseed_on_extinction": True,
     "paused": False,
     "ticks_per_frame": 1,
+    "learning": True,
+    "inheritance": "learned",
 }
 OUT.parent.mkdir(parents=True, exist_ok=True)
-OUT.write_bytes(encode_snapshot(state, compute_metrics(state), status))
+cfg = Config()
+inspect = inspect_entity(state, cfg, 0)  # a real inspection payload for the viewer's tests
+OUT.write_bytes(encode_snapshot(state, compute_metrics(state), status, inspect))
 print(f"wrote {OUT} ({OUT.stat().st_size} bytes)")

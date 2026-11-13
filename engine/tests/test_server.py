@@ -168,3 +168,43 @@ async def test_a_viewer_that_fails_a_send_is_disconnected(server):
     await server._broadcast(b"frame")
     assert viewer not in server._viewers
     assert viewer.aborted  # otherwise the page shows "connected" with a frozen picture
+
+
+# --- stage 2 -------------------------------------------------------------------
+
+
+async def test_select_then_inspect_arrives(server):
+    async with connect(url(server)) as ws:
+        _, _, first = await greeting(ws)
+        assert first["inspect"] is None and first["status"]["learning"] is True
+        await ws.send('{"type":"select","slot":2}')
+        async with asyncio.timeout(10):
+            while (snap := await next_snapshot(ws))["inspect"] is None:
+                pass
+        assert snap["inspect"]["slot"] == 2 and len(snap["inspect"]["inputs"]) == 10
+        await ws.send('{"type":"select","slot":1000000000}')
+        async with asyncio.timeout(10):
+            while (await next_snapshot(ws))["inspect"] is not None:
+                pass
+
+
+async def test_switch_controls_reach_runner_history_and_every_viewer(server):
+    async with connect(url(server)) as a, connect(url(server)) as b:
+        await greeting(a)
+        await greeting(b)
+        await a.send('{"type":"learning","value":false}')
+        await a.send('{"type":"inheritance","value":"birth"}')
+        seen_record = False
+        async with asyncio.timeout(15):
+            while True:
+                message = await b.recv()
+                if isinstance(message, str):
+                    m = json.loads(message)
+                    events = m.get("record", {}).get("events", [])
+                    seen_record = seen_record or any(e.get("event") == "switch" for e in events)
+                else:
+                    status = decode_snapshot(message)[0]["status"]
+                    if status["learning"] is False and status["inheritance"] == "birth" and seen_record:
+                        break
+    assert server.runner.status()["learning"] is False
+    assert server.runner.status()["inheritance"] == "birth"
