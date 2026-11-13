@@ -175,7 +175,7 @@ def test_reseed_ticks_do_not_depend_on_chunk_size(tmp_path):
     for _ in range(142):
         b.advance(7)
     b.advance(6)
-    assert a.extinctions == b.extinctions >= 2
+    assert a.extinctions == b.extinctions >= 1  # at least one reseed crossed
     assert reseed_ticks(a.recorder.run_dir) == reseed_ticks(b.recorder.run_dir)
     assert states_equal(a.state, b.state)
 
@@ -391,3 +391,23 @@ def test_fresh_start_keeps_cumulative_counters_and_dates_founders(tmp_path):
     assert s.strikes.tolist()[:3] >= [5, 6, 7]
     assert int(s.colonies_died.sum()) >= 3 and int(s.colony_life_total.sum()) >= 30
     assert bool((s.col_born[s.col_alive] > 0).all())
+
+
+def families_formed(run_dir):
+    return [e for e in events_of(run_dir) if e["event"] == "families_formed"]
+
+
+def test_families_formed_event_once_per_world(tmp_path):
+    c = _Config(capacity_members=256, capacity_colonies=24, capacity_food=64, grace_ticks=150)
+    r = Runner(c, 0, Recorder(tmp_path, c, 0))
+    r.advance(120)
+    assert families_formed(r.recorder.run_dir) == []
+    r.advance(100)
+    assert [e["tick"] for e in families_formed(r.recorder.run_dir)] == [150]
+
+
+def test_fresh_start_restarts_the_grace_period(tmp_path):
+    r = Runner(doomed, 0, Recorder(tmp_path, doomed, 0))
+    r.advance(5)
+    assert r.extinctions >= 1 and int(r.state.founded) > 0
+    assert int(r.state.founded) <= int(r.state.tick)

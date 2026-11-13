@@ -11,7 +11,7 @@ from .brain import act_all
 from .combat import strike
 from .config import Config
 from .learning import learn_phase
-from .lifecycle import age_and_die, grow, kill_dead_colonies, regrow_food, split
+from .lifecycle import form_families, age_and_die, grow, kill_dead_colonies, regrow_food, split
 from .physics import deliver, metabolise, move, pickup
 from .senses import observe
 from .state import WorldState
@@ -21,6 +21,7 @@ from .territory import update_territory
 def step(state: WorldState, cfg: Config) -> WorldState:
     """Advance the world by one tick. The order of the phases is fixed."""
     key, k_grow, k_split, k_food = jax.random.split(state.key, 4)
+    state = form_families(state, cfg)  # only acts on the tick the grace period ends
 
     obs = observe(state, cfg)  # (N, 10)
     state = learn_phase(state, obs, cfg)  # score and correct last tick's predictions

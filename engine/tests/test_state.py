@@ -71,30 +71,27 @@ import numpy as np  # noqa: E402
 from simlife.senses import torus_distance  # noqa: E402
 
 
-def test_founding_families():
+def nearest_centre(s):
+    d = torus_distance(s.nest[:, None, :], s.family_centre[None, :, :])
+    return np.asarray(jnp.argmin(d, axis=1))
+
+
+def test_founding_world_has_independent_colonies_and_regional_families():
     cfg = Config()
     s = init_world(jax.random.key(0), cfg)
     assert int(s.col_alive.sum()) == 18 and s.territory.shape == (6, 64, 64)
-    assert sorted(np.bincount(np.asarray(s.col_family[:18])).tolist()) == [3] * 6
-    a = s.alive & (s.colony == 0)  # family 0
-    b = s.alive & (s.colony == 6)  # also family 0
-    c = s.alive & (s.colony == 1)  # family 1
-    assert not bool((s.params["w1"][a][0] == s.params["w1"][c][0]).all())
+    assert s.family_centre.shape == (6, 2) and int(s.founded) == 0
+    w = s.params["w1"]
+    firsts = [w[s.alive & (s.colony == c)] for c in range(18)]
+    assert all(bool((f == f[0]).all()) for f in firsts)  # a colony is clonal
+    assert len({bytes(np.asarray(f[0])) for f in firsts}) == 18  # colonies are independent
+    live = np.asarray(s.col_alive)
+    assert (np.asarray(s.col_family)[live] == nearest_centre(s)[live]).all()
     assert s.params["w2"].shape == (cfg.capacity_members, 6, 8)
     assert s.params["w3"].shape == (cfg.capacity_members, 9, 8)
     assert not bool(s.territory.any()) and not bool(s.striking.any())
     assert s.strikes.shape == (3,) and s.colonies_died.shape == (2,)
     assert bool((s.col_born == 0).all()) and not bool(s.col_foreign.any())
-
-
-def test_family_nests_start_near_one_another():
-    cfg = Config()
-    s = init_world(jax.random.key(1), cfg)
-    for k in range(cfg.n_families):
-        nests = s.nest[:18][s.col_family[:18] == k]
-        for i in range(len(nests)):
-            for j in range(i):
-                assert float(torus_distance(nests[i], nests[j])) <= 2 * cfg.family_spread + 1e-6
 
 
 def test_founding_world_ignores_switches():
@@ -105,17 +102,3 @@ def test_founding_world_ignores_switches():
     )
     assert bool((a.params["w1"] == b.params["w1"]).all())
     assert bool((a.nest == b.nest).all()) and bool((a.col_family == b.col_family).all())
-
-
-def test_founding_nests_of_a_family_are_related_but_differ():
-    cfg = Config()
-    s = init_world(jax.random.key(0), cfg)
-    w = s.params["w1"]
-    nest0 = w[s.alive & (s.colony == 0)]  # family 0
-    nest6 = w[s.alive & (s.colony == 6)]  # family 0, another nest
-    nest1 = w[s.alive & (s.colony == 1)]  # family 1
-    assert bool((nest0 == nest0[0]).all())  # a nest is clonal
-    within = float(jnp.abs(nest0[0] - nest6[0]).mean())
-    between = float(jnp.abs(nest0[0] - nest1[0]).mean())
-    assert 0 < within < 0.5 * between
-    assert bool((s.birth_params["w1"] == s.params["w1"]).all())

@@ -73,6 +73,6 @@ def metabolise(state: WorldState, speed: Array, cfg: Config) -> WorldState:
     # Upkeep: a nest on ground another family dominates pays extra, more the
     # more foreign the ground is. Unmarked ground counts as half foreign.
     own, foreign = scent_at(state, state.nest, state.col_family, cfg)
-    competing = state.tick >= cfg.grace_ticks  # no upkeep during the grace period
+    competing = state.tick >= state.founded + cfg.grace_ticks  # no upkeep during the grace period
     upkeep = state.col_alive * competing * cfg.upkeep_rate * (1 - home_share(own, foreign))
     return state._replace(energy=state.energy - spent - upkeep)

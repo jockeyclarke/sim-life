@@ -105,3 +105,37 @@ def test_no_upkeep_during_the_grace_period():
     assert jnp.isclose(metabolise(foreign, no_speed, c).energy[0], 10.0 - c.base_cost)
     later = foreign._replace(tick=jnp.int32(100))
     assert jnp.isclose(metabolise(later, no_speed, c).energy[0], 10.0 - c.base_cost - c.upkeep_rate)
+
+
+# --- families form when the grace period ends -----------------------------------
+
+from simlife.lifecycle import form_families  # noqa: E402
+from simlife.senses import torus_distance  # noqa: E402
+
+
+def test_families_form_exactly_when_the_grace_period_ends():
+    c = Config(capacity_members=256, capacity_colonies=16, capacity_food=64, initial_colonies=8,
+               grace_ticks=50)
+    s = init_world(jax.random.key(2), c)
+    scrambled = s._replace(col_family=(s.col_family + 1) % c.n_families,
+                           territory=jnp.ones_like(s.territory))
+    before = form_families(scrambled._replace(tick=jnp.int32(49)), c)
+    assert bool((before.col_family == scrambled.col_family).all()) and bool(before.territory.all())
+    at = form_families(scrambled._replace(tick=jnp.int32(50)), c)
+    d = torus_distance(at.nest[:, None, :], at.family_centre[None, :, :])
+    assert bool((at.col_family == jnp.argmin(d, axis=1)).all())
+    assert not bool(at.territory.any())
+    later = form_families(scrambled._replace(tick=jnp.int32(51)), c)
+    assert bool((later.col_family == scrambled.col_family).all())
+
+
+def test_grace_is_counted_from_when_the_world_was_founded():
+    c = dataclasses.replace(cfg, grace_ticks=100)
+    s = member(blank(c), 0, (0.6, 0.6), colony=0)
+    y, x = divmod(int(cell_of(s.nest[:1], c)[0]), G)
+    foreign = s._replace(territory=jnp.zeros((2, G, G)).at[1, y, x].set(5.0),
+                         founded=jnp.int32(1000), tick=jnp.int32(1050))
+    no_speed = jnp.zeros(c.capacity_members)
+    assert jnp.isclose(metabolise(foreign, no_speed, c).energy[0], 10.0 - c.base_cost)
+    assert jnp.isclose(metabolise(foreign._replace(tick=jnp.int32(1100)), no_speed, c).energy[0],
+                       10.0 - c.base_cost - c.upkeep_rate)

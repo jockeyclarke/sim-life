@@ -43,7 +43,7 @@ class WorldState(NamedTuple):
     energy: Array  # (C,) f32 shared pool
     col_alive: Array  # (C,) bool
     col_generation: Array  # (C,) i32 splits since a founding colony
-    col_family: Array  # (C,) i32 never changes; daughters inherit it
+    col_family: Array  # (C,) i32 set by region when the grace period ends; daughters inherit it
     col_born: Array  # (C,) i32 tick the colony was founded
     col_foreign: Array  # (C,) bool founded where another family's scent dominated
 
@@ -55,6 +55,8 @@ class WorldState(NamedTuple):
     delivered_total: Array  # () i32 pellets delivered to any nest, ever
 
     # Families, territory and aggression (stage 3).
+    family_centre: Array  # (K, 2) f32 each family's regional centre
+    founded: Array  # () i32 tick this world began; its grace period runs from here
     territory: Array  # (K, G, G) f32 each family's scent
     aggression: Array  # (N,) f32 aggression output last tick
     striking: Array  # (N,) bool struck someone this tick
@@ -88,6 +90,12 @@ def patch_positions(key: Array, patch_pos: Array, cfg: Config) -> Array:
     return jnp.where(p >= 1.0, 0.0, p)  # see senses.wrap01
 
 
+def nearest_centre(points: Array, centres: Array) -> Array:
+    """Index of the nearest centre to each point, on the wrap-around world."""
+    delta = (points[:, None, :] - centres[None, :, :] + 0.5) % 1.0 - 0.5
+    return jnp.argmin((delta**2).sum(-1), axis=1).astype(jnp.int32)
+
+
 def init_world(key: Array, cfg: Config) -> WorldState:
     N, C, F, P = (
         cfg.capacity_members,
@@ -109,31 +117,18 @@ def init_world(key: Array, cfg: Config) -> WorldState:
     # Colony c's members sit in contiguous slots. Unused slots point at colony 0.
     colony = jnp.where(alive, slot // cfg.initial_members, 0).astype(jnp.int32)
 
-    # Founding colony c belongs to family c % K. Each family has a centre, and
-    # its nests lie within family_spread of it, so families start in regions.
+    # Independent colonies, as in stages 1 and 2: scattered nests, one random
+    # network each. Families are regions: each colony belongs to the nearest
+    # of K centres. (They are re-formed when the grace period ends.)
     col = jnp.arange(C)
     col_alive = col < cfg.initial_colonies
-    col_family = jnp.where(col_alive, col % K, 0).astype(jnp.int32)
-    k_centre, k_angle, k_radius = jax.random.split(k_nest, 3)
-    centres = jax.random.uniform(k_centre, (K, 2))
-    angle = jax.random.uniform(k_angle, (C,), maxval=2 * jnp.pi)
-    radius = cfg.family_spread * jnp.sqrt(jax.random.uniform(k_radius, (C,)))
-    offset = radius[:, None] * jnp.stack([jnp.cos(angle), jnp.sin(angle)], axis=1)
-    nest = (centres[col_family] + offset) % 1.0
-    nest = jnp.where(nest >= 1.0, 0.0, nest)
+    k_centre, k_where = jax.random.split(k_nest)
+    nest = jax.random.uniform(k_where, (C, 2))
+    family_centre = jax.random.uniform(k_centre, (K, 2))
+    col_family = nearest_centre(nest, family_centre)
 
-    # One random network per family. Each founding nest starts from it plus a
-    # little noise, so a family's nests are related but not identical: several
-    # chances at a viable forager. The members of one nest are identical.
-    k_family, k_vary = jax.random.split(k_net)
-    families = jax.vmap(lambda k: init_params(k, cfg))(jax.random.split(k_family, K))
-    vary_keys = jax.random.split(k_vary, len(families))
-    nests = {
-        name: families[name][col_family]
-        + cfg.founder_variation * jax.random.normal(key, families[name][col_family].shape)
-        for name, key in zip(sorted(families), vary_keys)
-    }
-    params = jax.tree.map(lambda a: a[colony], nests)
+    founders = jax.vmap(lambda k: init_params(k, cfg))(jax.random.split(k_net, C))
+    params = jax.tree.map(lambda a: a[colony], founders)
 
     lifespan = random_lifespan(k_life, (N,), cfg)
     # Stagger starting ages so a founding cohort doesn't all die on one tick.
@@ -171,6 +166,8 @@ def init_world(key: Array, cfg: Config) -> WorldState:
         patch_pos=patch_pos,
         delivered_total=jnp.int32(0),
         col_family=col_family,
+        family_centre=family_centre,
+        founded=jnp.int32(0),
         col_born=jnp.zeros(C, jnp.int32),
         col_foreign=jnp.zeros(C, bool),
         territory=jnp.zeros((K, cfg.territory_grid, cfg.territory_grid)),

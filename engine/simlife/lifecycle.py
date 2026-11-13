@@ -8,7 +8,7 @@ from jax import Array
 
 from .config import Config
 from .senses import wrap01
-from .state import WorldState, patch_positions, random_lifespan
+from .state import WorldState, nearest_centre, patch_positions, random_lifespan
 from .territory import home_share, scent_at
 
 
@@ -206,4 +206,18 @@ def regrow_food(state: WorldState, cfg: Config, key: Array) -> WorldState:
     return state._replace(
         food_pos=jnp.where(revive[:, None], fresh, state.food_pos),
         food_alive=state.food_alive | revive,
+    )
+
+
+def form_families(state: WorldState, cfg: Config) -> WorldState:
+    """On the tick the grace period ends, divide the world into families by region.
+
+    Every colony joins the family of its nest's nearest regional centre, and
+    the territory scent is cleared so the contest starts fresh. On any other
+    tick nothing changes.
+    """
+    now = state.tick == state.founded + cfg.grace_ticks
+    return state._replace(
+        col_family=jnp.where(now, nearest_centre(state.nest, state.family_centre), state.col_family),
+        territory=jnp.where(now, 0.0, state.territory),
     )

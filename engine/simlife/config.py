@@ -62,12 +62,11 @@ class Config:
     birth_cost: float = 4.0
     reserve_per_member: float = 2.0
 
-    # Families and territory (stage 3). Founding colony c belongs to family
-    # c % n_families; each family's founding nests lie near one another.
+    # Families and territory (stage 3).
     n_families: int = 6
-    family_spread: float = 0.08
-    founder_variation: float = 0.15  # each founding nest: family network + this much noise
-    grace_ticks: int = 20_000  # no upkeep or strikes before this tick
+    # Families form when the grace period ends: each living colony joins the
+    # family of the nearest of n_families regional centres.
+    grace_ticks: int = 20_000  # ticks after a world is founded with no upkeep or strikes
     territory_grid: int = 64
     mark_rate: float = 0.02  # scent each member lays per tick where it stands
     nest_mark: float = 0.2  # scent each nest lays per tick

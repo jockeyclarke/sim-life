@@ -127,6 +127,9 @@ class Runner:
                 remaining -= tick - before
 
                 self._watch_takeover(written)
+                formed = int(self.state.founded) + self.cfg.grace_ticks
+                if before < formed <= tick:
+                    written.append(self.recorder.event({"event": "families_formed", "tick": formed}))
                 if tick > before and tick % self.record_interval == 0:
                     written.append(self.recorder.record(compute_metrics(self.state)))
                 interval = self.checkpoint_interval
@@ -162,7 +165,10 @@ class Runner:
                 colony_life_total=self.state.colony_life_total,
             )
             fresh = self.state
-            self.state = fresh._replace(col_born=jnp.where(fresh.col_alive, fresh.tick, 0))
+            self.state = fresh._replace(
+                col_born=jnp.where(fresh.col_alive, fresh.tick, 0),
+                founded=fresh.tick,  # a new world: its own grace period
+            )
             self._families_alive = self._count_families()
             self.extinct = False
             written.append(self.recorder.event({"event": "reseed", "tick": tick}))

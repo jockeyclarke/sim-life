@@ -29,7 +29,7 @@ def strike(state: WorldState, cfg: Config) -> WorldState:
     distance = jnp.where(foe, distance, jnp.inf)
     victim = jnp.argmin(distance, axis=1)  # each member's nearest foreigner
     in_reach = jnp.min(distance, axis=1) <= cfg.strike_reach
-    competing = state.tick >= cfg.grace_ticks  # nobody strikes during the grace period
+    competing = state.tick >= state.founded + cfg.grace_ticks  # nobody strikes during the grace period
     striking = state.alive & (state.aggression > cfg.strike_threshold) & in_reach & competing
 
     own, foreign = scent_at(state, state.pos, family, cfg)
