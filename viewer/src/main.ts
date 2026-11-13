@@ -1,5 +1,6 @@
 import { Connection } from "./connection";
 import { mountControls } from "./controls";
+import { Inspector } from "./inspector";
 import { PopulationView } from "./populationView";
 import type { Snapshot } from "./protocol";
 import { cssVar, fitCanvas } from "./theme";
@@ -18,6 +19,7 @@ let mode: ColorMode = "colony";
 let currentRun = "";
 let overlayRun: string | null = null;
 
+const inspector = new Inspector(document.querySelector<HTMLElement>("#inspector")!);
 const population = new PopulationView(document.querySelector<HTMLElement>("#population")!);
 
 const controls = mountControls(document.querySelector<HTMLElement>("#controls")!, (m) => connection.send(m), {
@@ -37,6 +39,7 @@ const connection = new Connection(url, {
   onSnapshot(snapshot) {
     latest = snapshot;
     controls.update(snapshot.status, snapshot.metrics);
+    inspector.update(snapshot);
   },
   onMessage(message) {
     if (message.type === "runs") {

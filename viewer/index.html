@@ -70,6 +70,22 @@
       #population .legend span.dashed::before { border-top-style: dashed; }
       #population .readout { color: var(--muted); font-size: 12px; margin-bottom: 6px; font-variant-numeric: tabular-nums; }
       #population .legend { flex-direction: column; }
+      #inspector h3 { font-size: 12px; font-weight: 600; margin: 14px 0 4px; }
+      #inspector h4 { font-size: 11px; font-weight: 400; color: var(--muted); margin: 0 0 3px; }
+      #inspector .hint, #inspector .caption { color: var(--muted); font-size: 12px; margin: 4px 0; }
+      #inspector .caption { margin-top: 10px; }
+      #inspector .who { font-variant-numeric: tabular-nums; }
+      #inspector .colony { display: inline-block; width: 9px; height: 9px; border-radius: 50%; vertical-align: baseline; }
+      #inspector canvas { display: block; max-width: 100%; }
+      #inspector .flow { display: grid; grid-template-columns: minmax(0, 1.25fr) auto minmax(0, 1.25fr); gap: 10px; font-size: 11px; }
+      #inspector .value { display: flex; align-items: center; gap: 5px; height: 17px; }
+      #inspector .value .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      #inspector .value .swatch { width: 14px; height: 12px; border-radius: 2px; flex: none; }
+      #inspector .value .num { width: 36px; text-align: right; font-variant-numeric: tabular-nums; flex: none; }
+      #inspector .legend { display: flex; gap: 14px; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+      #inspector .legend span::before { content: ""; display: inline-block; width: 16px; height: 7px; margin-right: 6px; box-sizing: border-box; }
+      #inspector .legend .solid::before { background: var(--series); }
+      #inspector .legend .outline::before { border: 1.5px solid var(--overlay); }
     </style>
   </head>
   <body>
@@ -77,6 +93,7 @@
       <div id="world-wrap"><canvas id="world"></canvas></div>
       <aside>
         <section><h2>Run</h2><div id="controls"></div></section>
+        <section><h2>Inspector</h2><div id="inspector"></div></section>
         <section><h2>Population</h2><div id="population"></div></section>
       </aside>
     </main>
