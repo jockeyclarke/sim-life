@@ -20,5 +20,6 @@ include = ["simlife*"]
 testpaths = ["engine/tests"]
 pythonpath = ["engine/tests"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 markers = ["slow: long-running simulation tests (deselected by default)"]
 addopts = "-m 'not slow'"
