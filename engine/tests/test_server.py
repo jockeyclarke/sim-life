@@ -181,7 +181,7 @@ async def test_select_then_inspect_arrives(server):
         async with asyncio.timeout(10):
             while (snap := await next_snapshot(ws))["inspect"] is None:
                 pass
-        assert snap["inspect"]["slot"] == 2 and len(snap["inspect"]["inputs"]) == 10
+        assert snap["inspect"]["slot"] == 2 and len(snap["inspect"]["inputs"]) == cfg.n_inputs
         await ws.send('{"type":"select","slot":1000000000}')
         async with asyncio.timeout(10):
             while (await next_snapshot(ws))["inspect"] is not None:

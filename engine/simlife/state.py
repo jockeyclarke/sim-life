@@ -43,6 +43,9 @@ class WorldState(NamedTuple):
     energy: Array  # (C,) f32 shared pool
     col_alive: Array  # (C,) bool
     col_generation: Array  # (C,) i32 splits since a founding colony
+    col_family: Array  # (C,) i32 never changes; daughters inherit it
+    col_born: Array  # (C,) i32 tick the colony was founded
+    col_foreign: Array  # (C,) bool founded where another family's scent dominated
 
     # Food, capacity F. Pellet i belongs to patch i % P.
     food_pos: Array  # (F, 2) f32
@@ -50,6 +53,14 @@ class WorldState(NamedTuple):
     patch_pos: Array  # (P, 2) f32
 
     delivered_total: Array  # () i32 pellets delivered to any nest, ever
+
+    # Families, territory and aggression (stage 3).
+    territory: Array  # (K, G, G) f32 each family's scent
+    aggression: Array  # (N,) f32 aggression output last tick
+    striking: Array  # (N,) bool struck someone this tick
+    strikes: Array  # (3,) i32 cumulative strikes on own, foreign, border ground
+    colonies_died: Array  # (2,) i32 colonies that died, founded at home / on foreign ground
+    colony_life_total: Array  # (2,) i32 their summed lifespans, in ticks
 
     # Switches. They live in the state, as traced values, so flipping one
     # never recompiles and every checkpoint remembers how it was set.
@@ -91,18 +102,30 @@ def init_world(key: Array, cfg: Config) -> WorldState:
     (k_state, k_nest, k_patch, k_food, k_net, k_head, k_life, k_age) = (
         jax.random.split(key, 8)
     )
+    K = cfg.n_families
 
     slot = jnp.arange(N)
     alive = slot < n_start
     # Colony c's members sit in contiguous slots. Unused slots point at colony 0.
     colony = jnp.where(alive, slot // cfg.initial_members, 0).astype(jnp.int32)
 
-    nest = jax.random.uniform(k_nest, (C, 2))
-    col_alive = jnp.arange(C) < cfg.initial_colonies
+    # Founding colony c belongs to family c % K. Each family has a centre, and
+    # its nests lie within family_spread of it, so families start in regions.
+    col = jnp.arange(C)
+    col_alive = col < cfg.initial_colonies
+    col_family = jnp.where(col_alive, col % K, 0).astype(jnp.int32)
+    k_centre, k_angle, k_radius = jax.random.split(k_nest, 3)
+    centres = jax.random.uniform(k_centre, (K, 2))
+    angle = jax.random.uniform(k_angle, (C,), maxval=2 * jnp.pi)
+    radius = cfg.family_spread * jnp.sqrt(jax.random.uniform(k_radius, (C,)))
+    offset = radius[:, None] * jnp.stack([jnp.cos(angle), jnp.sin(angle)], axis=1)
+    nest = (centres[col_family] + offset) % 1.0
+    nest = jnp.where(nest >= 1.0, 0.0, nest)
 
-    # One random network per colony, copied to every member: a colony starts clonal.
-    founders = jax.vmap(lambda k: init_params(k, cfg))(jax.random.split(k_net, C))
-    params = jax.tree.map(lambda a: a[colony], founders)
+    # One random network per family, copied to every member of every one of
+    # its nests: a family starts clonal.
+    founders = jax.vmap(lambda k: init_params(k, cfg))(jax.random.split(k_net, K))
+    params = jax.tree.map(lambda a: a[col_family[colony]], founders)
 
     lifespan = random_lifespan(k_life, (N,), cfg)
     # Stagger starting ages so a founding cohort doesn't all die on one tick.
@@ -139,6 +162,15 @@ def init_world(key: Array, cfg: Config) -> WorldState:
         food_alive=jnp.ones(F, bool),
         patch_pos=patch_pos,
         delivered_total=jnp.int32(0),
+        col_family=col_family,
+        col_born=jnp.zeros(C, jnp.int32),
+        col_foreign=jnp.zeros(C, bool),
+        territory=jnp.zeros((K, cfg.territory_grid, cfg.territory_grid)),
+        aggression=jnp.zeros(N),
+        striking=jnp.zeros(N, bool),
+        strikes=jnp.zeros(3, jnp.int32),
+        colonies_died=jnp.zeros(2, jnp.int32),
+        colony_life_total=jnp.zeros(2, jnp.int32),
         learning_on=jnp.bool_(True),
         inherit_learned=jnp.bool_(True),
     )

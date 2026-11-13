@@ -12,12 +12,13 @@ def test_snapshot_roundtrip_contains_only_the_living():
     s = init_world(jax.random.key(0), Config())
     h, a = decode_snapshot(encode_snapshot(s, compute_metrics(s), {"run_id": "x"}))
     assert h["type"] == "snapshot" and h["tick"] == 0 and h["status"] == {"run_id": "x"}
-    assert h["metrics"]["members"] == 192
-    assert a["member_pos"].shape == (192, 2) and a["colony_nest"].shape == (16, 2)
-    assert a["food_pos"].shape == (512, 2) and a["member_slot"].shape == (192,)
+    cfg = Config(); M = cfg.initial_colonies * cfg.initial_members
+    assert h["metrics"]["members"] == M
+    assert a["member_pos"].shape == (M, 2) and a["colony_nest"].shape == (cfg.initial_colonies, 2)
+    assert a["food_pos"].shape == (512, 2) and a["member_slot"].shape == (M,)
     assert a["member_pos"].dtype == np.float32
     assert set(a["member_carrying"]) <= {0.0, 1.0}
-    assert list(a["colony_members"]) == [12.0] * 16
+    assert list(a["colony_members"]) == [float(cfg.initial_members)] * cfg.initial_colonies
     assert list(a) == [
         "member_pos", "member_heading", "member_colony", "member_carrying",
         "member_slot", "member_error", "colony_slot", "colony_nest", "colony_energy",
@@ -30,7 +31,7 @@ def test_snapshot_member_rows_line_up_with_state_slots():
     s = s._replace(alive=s.alive.at[0].set(False))
     _, a = decode_snapshot(encode_snapshot(s, compute_metrics(s), {}))
     slots = a["member_slot"].astype(int)
-    assert slots[0] == 1 and len(slots) == 191
+    assert slots[0] == 1 and len(slots) == int(s.alive.sum())
     assert np.array_equal(a["member_pos"], np.asarray(s.pos)[slots])
 
 
@@ -90,7 +91,7 @@ def test_snapshot_carries_member_error_and_inspect():
     s = s._replace(pred_error_avg=s.pred_error_avg.at[5].set(0.25))
     h, a = decode_snapshot(encode_snapshot(s, compute_metrics(s), {}))
     assert h["inspect"] is None
-    assert a["member_error"].shape == (192,) and a["member_error"][5] == 0.25
+    assert a["member_error"].shape == (Config().initial_colonies * Config().initial_members,) and a["member_error"][5] == 0.25
     payload = {"slot": 5, "alive": True, "inputs": [0.5] * 10}
     h, _ = decode_snapshot(encode_snapshot(s, compute_metrics(s), {}, inspect=payload))
     assert h["inspect"] == payload

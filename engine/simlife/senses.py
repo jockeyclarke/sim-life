@@ -76,17 +76,20 @@ def neighbour_stats(state: WorldState, cfg: Config) -> tuple[Array, Array]:
 
 
 def observe(state: WorldState, cfg: Config) -> Array:
-    """The (N, 10) input matrix. Column order is fixed:
+    """The (N, 13) input matrix. Column order is fixed, and the predicted
+    senses come first so that obs[:, :n_predictions] selects them:
 
-    0 food scent left    1 food scent right
-    2 nest scent left    3 nest scent right
-    4 crowd              5 signal heard
-    6 carrying           7 colony energy
-    8 memory 0           9 memory 1
+    0 food scent left     1 food scent right
+    2 nest scent left     3 nest scent right
+    4 crowd               5 signal heard
+    6 territory left      7 territory right     8 foreign members nearby
+    9 carrying            10 colony energy
+    11 memory 0           12 memory 1
     """
     left, right = sensor_points(state.pos, state.heading, cfg)
     own_nest = state.nest[state.colony]
     crowd, heard = neighbour_stats(state, cfg)
+    zeros = jnp.zeros_like(crowd)
     columns = [
         jnp.tanh(food_scent(left, state.food_pos, state.food_alive, cfg)),
         jnp.tanh(food_scent(right, state.food_pos, state.food_alive, cfg)),
@@ -94,6 +97,9 @@ def observe(state: WorldState, cfg: Config) -> Array:
         nest_scent(right, own_nest, cfg),
         crowd,
         heard,
+        zeros,  # territory left (filled in by the territory task)
+        zeros,  # territory right
+        zeros,  # foreign members nearby
         state.carrying.astype(jnp.float32),
         jnp.tanh(state.energy[state.colony] / 100.0),
         state.memory[:, 0],

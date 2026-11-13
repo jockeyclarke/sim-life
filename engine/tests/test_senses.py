@@ -47,7 +47,7 @@ def test_observation_passes_through_carrying_and_memory_and_zeroes_dead():
     s = member(blank(cfg), 0, (0.5, 0.5), carrying=True, memory=[0.3, -0.7])
     s = s._replace(memory=s.memory.at[5].set(jnp.array([0.9, 0.9])))  # slot 5 is dead
     obs = observe(s, cfg)
-    assert obs.shape == (8, 10)
-    assert obs[0, 6] == 1 and jnp.allclose(obs[0, 8:], jnp.array([0.3, -0.7]))
-    assert jnp.isclose(obs[0, 7], jnp.tanh(10.0 / 100))
+    assert obs.shape == (8, 13)
+    assert obs[0, 9] == 1 and jnp.allclose(obs[0, 11:], jnp.array([0.3, -0.7]))
+    assert jnp.isclose(obs[0, 10], jnp.tanh(10.0 / 100))
     assert bool((obs[5] == 0).all())

@@ -218,7 +218,7 @@ def test_child_starts_with_no_previous_observation():
     s = learned_parent(True)
     n = quiet.capacity_members
     s = s._replace(  # stale values in every slot, as a dead member would leave behind
-        has_prev=jnp.ones(n, bool), prev_obs=jnp.ones((n, 10)), last_pred=jnp.ones((n, 6)),
+        has_prev=jnp.ones(n, bool), prev_obs=jnp.ones((n, quiet.n_inputs)), last_pred=jnp.ones((n, quiet.n_predictions)),
         pred_error=jnp.ones(n), pred_error_avg=jnp.ones(n),
     )
     s2 = grow(s, quiet, jax.random.key(0))

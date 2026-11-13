@@ -20,20 +20,20 @@ class Config:
     patch_radius: float = 0.05
 
     # Starting conditions.
-    initial_colonies: int = 16
+    initial_colonies: int = 18  # founding nests: n_families families of initial_colonies / n_families
     initial_members: int = 12
     initial_energy: float = 60.0
 
     # Network.
-    n_inputs: int = 10
+    n_inputs: int = 13
     n_hidden: int = 8
-    n_actions: int = 5
+    n_actions: int = 6
     init_sigma: float = 0.5
     mutation_sigma: float = 0.03
 
     # Lifetime learning. Each member predicts its next senses (the first
     # n_predictions observation columns) and learns from its own error.
-    n_predictions: int = 6
+    n_predictions: int = 9
     initial_lr: float = 0.02
     max_lr: float = 0.5
     lr_mutation_sigma: float = 0.1  # learning rate mutates by about this fraction per division
@@ -61,6 +61,24 @@ class Config:
     speed_cost: float = 0.004
     birth_cost: float = 4.0
     reserve_per_member: float = 2.0
+
+    # Families and territory (stage 3). Founding colony c belongs to family
+    # c % n_families; each family's founding nests lie near one another.
+    n_families: int = 6
+    family_spread: float = 0.08
+    territory_grid: int = 64
+    mark_rate: float = 0.02  # scent each member lays per tick where it stands
+    nest_mark: float = 0.2  # scent each nest lays per tick
+    scent_fade: float = 0.995
+    scent_spread: float = 0.1
+    upkeep_rate: float = 0.01  # extra cost per tick for a nest on wholly foreign ground
+
+    # Aggression (stage 3).
+    strike_threshold: float = 0.5
+    strike_reach: float = 0.015
+    strike_damage: float = 0.5  # at full home advantage; scaled by home share
+    strike_cost: float = 0.1  # paid by the striker's colony, wherever it strikes
+    border_band: float = 0.2  # home share within 0.5 ± band/2 counts as border
 
     # Colony splitting and food regrowth.
     split_size: int = 32

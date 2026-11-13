@@ -20,8 +20,11 @@ def inspect_entity(state: WorldState, cfg: Config, slot: int) -> dict:
     """
     params = {k: v[slot] for k, v in state.params.items()}
     x = state.prev_obs[slot]
-    turn, speed, signal, memory = act(params, x)
-    actions = [float(turn), float(speed), float(signal), float(memory[0]), float(memory[1])]
+    turn, speed, signal, memory, aggression = act(params, x)
+    actions = [
+        float(turn), float(speed), float(signal), float(memory[0]), float(memory[1]),
+        float(aggression),
+    ]
 
     def numbers(a) -> list:
         return np.asarray(a).astype(float).tolist()
@@ -37,7 +40,7 @@ def inspect_entity(state: WorldState, cfg: Config, slot: int) -> dict:
         "learning_rate": float(state.lr[slot]),
         "inputs": numbers(x),
         "hidden": numbers(hidden(params, x)),
-        "actions": actions,  # turn, speed, signal, memory 0, memory 1
+        "actions": actions,  # turn, speed, signal, memory 0, memory 1, aggression
         "predicted": numbers(state.last_pred[slot]),  # last tick's guess ...
         "actual": numbers(x[: cfg.n_predictions]),  # ... and what was then sensed
         "next_prediction": numbers(predict(params, x)),  # its guess for the coming tick
