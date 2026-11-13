@@ -103,3 +103,47 @@ def test_cli_no_serve_without_ticks_is_a_usage_error(tmp_path):
         capture_output=True, text=True, timeout=60,
     )
     assert out.returncode == 2 and "--ticks" in out.stderr
+
+
+# --- serving from the command line -------------------------------------------
+
+import signal  # noqa: E402
+import socket  # noqa: E402
+import time  # noqa: E402
+
+
+def test_cli_port_in_use_is_a_clear_error_and_leaves_no_run(tmp_path):
+    with socket.socket() as busy:
+        busy.bind(("127.0.0.1", 0))
+        busy.listen()
+        port = busy.getsockname()[1]
+        out = subprocess.run(
+            [sys.executable, "-m", "simlife", "run", "--port", str(port),
+             "--runs-dir", str(tmp_path)],
+            capture_output=True, text=True, timeout=60,
+        )
+    assert out.returncode == 1
+    assert f"port {port}" in out.stderr and "Traceback" not in out.stderr
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_cli_terminate_signal_saves_the_run(tmp_path):
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "simlife", "run", "--port", str(port),
+         "--runs-dir", str(tmp_path)],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    try:
+        assert "serving" in proc.stdout.readline()
+        time.sleep(3.0)  # let it compile and run some ticks
+        proc.send_signal(signal.SIGTERM)
+        out, err = proc.communicate(timeout=30)
+    finally:
+        proc.kill()
+    assert proc.returncode == 0, err
+    assert "run saved" in out and "Traceback" not in err
+    (run_dir,) = list(tmp_path.iterdir())
+    assert len(list((run_dir / "checkpoints").glob("state-*.npz"))) >= 1

@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import signal
 import time
 from pathlib import Path
 
@@ -45,6 +46,10 @@ class SimServer:
     async def start(self, host: str, port: int) -> None:
         self._server = await ws_serve(self._handle, host, port)
         self.port = self._server.sockets[0].getsockname()[1]
+
+    def request_stop(self) -> None:
+        """Ask run() to finish after the work in flight; it then checkpoints."""
+        self._closing = True
 
     async def close(self) -> None:
         self._closing = True
@@ -165,11 +170,24 @@ class SimServer:
         await self._broadcast(self._snapshot())
 
 
+class ListenError(OSError):
+    """The server could not open its port."""
+
+
 async def serve(
     runner: Runner, runs_dir: Path, host: str, port: int, ticks: int | None = None
 ) -> None:
     server = SimServer(runner, runs_dir, ticks)
-    await server.start(host, port)
+    try:
+        await server.start(host, port)
+    except OSError as error:
+        raise ListenError(error.errno, error.strerror) from error
+
+    # Stop cleanly, with a checkpoint, on Ctrl-C and on an ordinary terminate.
+    loop = asyncio.get_running_loop()
+    for signum in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(signum, server.request_stop)
+
     print(f"simlife: run {runner.recorder.run_id} serving on ws://{host}:{server.port}",
           flush=True)
     try:

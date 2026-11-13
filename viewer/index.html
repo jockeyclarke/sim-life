@@ -15,8 +15,8 @@
         --line: #d9d6cf;
         --food: #4f9d4a;
         --accent: #c2410c;
-        --series: #1d4ed8;
-        --overlay: #b45309;
+        --series: #2a78d6;
+        --overlay: #eb6834;
         --event: #a1a1aa;
       }
       @media (prefers-color-scheme: dark) {
@@ -29,8 +29,8 @@
           --line: #33373d;
           --food: #7cc576;
           --accent: #fb923c;
-          --series: #7aa7ff;
-          --overlay: #fbbf24;
+          --series: #3987e5;
+          --overlay: #d95926;
           --event: #5b6068;
         }
       }
@@ -68,6 +68,8 @@
       #population .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
       #population .legend span::before { content: ""; display: inline-block; width: 18px; margin-right: 6px; vertical-align: middle; border-top: 2px solid var(--swatch); }
       #population .legend span.dashed::before { border-top-style: dashed; }
+      #population .readout { color: var(--muted); font-size: 12px; margin-bottom: 6px; font-variant-numeric: tabular-nums; }
+      #population .legend { flex-direction: column; }
     </style>
   </head>
   <body>

@@ -34,6 +34,8 @@ export interface Controls {
   update(status: Status, metrics: Metrics): void;
   setConnection(connected: boolean): void;
   setRuns(runs: string[], current: string): void;
+  /** Pick a comparison run as if the user had chosen it. "previous" means the newest other run. */
+  chooseOverlay(runId: string): void;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -116,6 +118,13 @@ export function mountControls(
         ...others.map((id) => el("option", { value: id, textContent: id })),
       );
       overlay.value = others.includes(chosen) ? chosen : "";
+    },
+    chooseOverlay(runId) {
+      const ids = Array.from(overlay.options, (o) => o.value).filter((id) => id !== "");
+      const wanted = runId === "previous" ? ids[0] : runId;
+      if (wanted === undefined || !ids.includes(wanted)) return;
+      overlay.value = wanted;
+      options.onOverlay(wanted);
     },
   };
 }

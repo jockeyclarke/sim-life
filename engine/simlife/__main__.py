@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 import sys
 from pathlib import Path
 
@@ -79,12 +80,20 @@ def main(argv: list[str] | None = None) -> int:
 
     import asyncio
 
-    from .server import serve
+    from .server import ListenError, serve
 
     try:
         asyncio.run(serve(runner, args.runs_dir, args.host, args.port, ticks=args.ticks))
-    except KeyboardInterrupt:
-        pass
+    except ListenError as error:
+        print(
+            f"error: cannot listen on {args.host} port {args.port} ({error.strerror}). "
+            "Is another engine already running? Use --port to pick another.",
+            file=sys.stderr,
+        )
+        if not args.resume:
+            # nothing ran, so don't leave an empty run behind
+            shutil.rmtree(runner.recorder.run_dir, ignore_errors=True)
+        return 1
     return 0
 
 
