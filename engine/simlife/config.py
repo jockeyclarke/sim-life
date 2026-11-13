@@ -14,7 +14,7 @@ from dataclasses import asdict, dataclass, fields
 class Config:
     # Capacities. Array shapes are fixed by these for the whole run.
     capacity_members: int = 2048
-    capacity_colonies: int = 64
+    capacity_colonies: int = 128
     capacity_food: int = 512
     num_patches: int = 8
     patch_radius: float = 0.05
@@ -43,12 +43,12 @@ class Config:
     food_scent_length: float = 0.08
     nest_scent_length: float = 0.15
     neighbour_grid: int = 32
-    pickup_radius: float = 0.01
-    nest_radius: float = 0.02
+    pickup_radius: float = 0.02
+    nest_radius: float = 0.04
 
     # Energy.
-    food_energy: float = 5.0
-    base_cost: float = 0.002
+    food_energy: float = 10.0
+    base_cost: float = 0.001
     speed_cost: float = 0.004
     birth_cost: float = 4.0
     reserve_per_member: float = 2.0
@@ -56,7 +56,7 @@ class Config:
     # Colony splitting and food regrowth.
     split_size: int = 32
     split_distance: float = 0.15
-    food_regrow_prob: float = 0.002
+    food_regrow_prob: float = 0.001
 
     def to_dict(self) -> dict:
         return asdict(self)
