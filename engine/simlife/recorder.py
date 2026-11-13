@@ -20,7 +20,6 @@ import numpy as np
 from .config import Config
 from .state import WorldState, init_world
 
-_PARAM_PREFIX = "params."
 _EXTRA_PREFIX = "_runner."
 
 
@@ -33,9 +32,9 @@ def save_state(path: Path, state: WorldState, extra: dict | None = None) -> None
     for name, value in state._asdict().items():
         if name == "key":
             arrays[name] = np.asarray(jax.random.key_data(value))
-        elif name == "params":
+        elif isinstance(value, dict):  # params and birth_params
             for pname, pvalue in value.items():
-                arrays[_PARAM_PREFIX + pname] = np.asarray(pvalue)
+                arrays[f"{name}.{pname}"] = np.asarray(pvalue)
         else:
             arrays[name] = np.asarray(value)
     for name, value in (extra or {}).items():
@@ -51,25 +50,31 @@ def save_state(path: Path, state: WorldState, extra: dict | None = None) -> None
 def _load(path: Path, cfg: Config) -> tuple[WorldState, dict]:
     template = init_world(jax.random.key(0), cfg)
     with np.load(path) as data:
+
+        def read(label: str, want):
+            if label not in data.files:
+                raise ValueError(
+                    f"checkpoint {path} was recorded by an older version of simlife "
+                    f"(it has no '{label}') and cannot be resumed; its history can "
+                    "still be viewed and compared"
+                )
+            got = data[label]
+            if got.shape != want.shape:
+                raise ValueError(
+                    f"checkpoint {path} does not match this run's settings: "
+                    f"'{label}' has shape {got.shape} but the capacity settings "
+                    f"give {want.shape}"
+                )
+            return jnp.asarray(got, dtype=want.dtype)
+
         fields = {}
         for name, expected in template._asdict().items():
             if name == "key":
                 fields[name] = jax.random.wrap_key_data(jnp.asarray(data[name]))
-                continue
-            if name == "params":
-                loaded = {p: data[_PARAM_PREFIX + p] for p in expected}
-                pairs = [(f"params.{p}", loaded[p], expected[p]) for p in expected]
-                fields[name] = {p: jnp.asarray(v) for p, v in loaded.items()}
+            elif isinstance(expected, dict):
+                fields[name] = {p: read(f"{name}.{p}", w) for p, w in expected.items()}
             else:
-                pairs = [(name, data[name], expected)]
-                fields[name] = jnp.asarray(data[name], dtype=expected.dtype)
-            for label, got, want in pairs:
-                if got.shape != want.shape:
-                    raise ValueError(
-                        f"checkpoint {path} does not match this run's settings: "
-                        f"'{label}' has shape {got.shape} but the capacity settings "
-                        f"give {want.shape}"
-                    )
+                fields[name] = read(name, expected)
         extra = {
             name[len(_EXTRA_PREFIX):]: data[name].item()
             for name in data.files

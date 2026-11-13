@@ -102,3 +102,51 @@ def test_resume_without_any_checkpoint_raises_clear_error(tmp_path):
     rec = Recorder(tmp_path, cfg, seed=2)
     with pytest.raises(FileNotFoundError, match="checkpoint"):
         resume_run(rec.run_dir)
+
+
+# --- stage 2 -------------------------------------------------------------------
+
+import subprocess  # noqa: E402
+import sys  # noqa: E402
+
+import numpy as np  # noqa: E402
+
+
+def strip_fields(path, *names):
+    """Rewrite a checkpoint without some arrays, as an older version would have saved it."""
+    with np.load(path) as data:
+        kept = {k: data[k] for k in data.files if k not in names}
+    with open(path, "wb") as f:
+        np.savez(f, **kept)
+
+
+def test_new_fields_roundtrip_through_disk(tmp_path):
+    s = run_ticks(init_world(jax.random.key(3), cfg), cfg, 30)
+    save_state(tmp_path / "s.npz", s)
+    loaded = load_state(tmp_path / "s.npz", cfg)
+    assert states_equal(loaded, s)
+    assert loaded.learning_on.dtype == s.learning_on.dtype
+    assert loaded.birth_params.keys() == s.birth_params.keys()
+
+
+def test_resuming_a_checkpoint_from_an_older_version_says_so(tmp_path):
+    path = tmp_path / "s.npz"
+    save_state(path, init_world(jax.random.key(0), cfg))
+    strip_fields(path, "lr", "params.w3", "params.b3")
+    with pytest.raises(ValueError, match="older version"):
+        load_state(path, cfg)
+
+
+def test_cli_resume_of_older_run_is_a_one_line_error(tmp_path):
+    default = Config()
+    rec = Recorder(tmp_path, default, seed=0)
+    path = rec.checkpoint(init_world(jax.random.key(0), default))
+    strip_fields(path, "lr", "birth_params.w1")
+    out = subprocess.run(
+        [sys.executable, "-m", "simlife", "run", "--no-serve", "--ticks", "10",
+         "--resume", str(rec.run_dir)],
+        capture_output=True, text=True, timeout=60,
+    )
+    assert out.returncode == 1
+    assert "older version" in out.stderr and "Traceback" not in out.stderr
+    assert len(out.stderr.strip().splitlines()) == 1

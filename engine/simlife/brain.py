@@ -17,13 +17,18 @@ from .config import Config
 
 def init_params(key: Array, cfg: Config) -> dict:
     """Random weights for one entity (no leading population axis)."""
-    k1, k2, k3, k4 = jax.random.split(key, 4)
+    k1, k2, k3, k4, k5, k6 = jax.random.split(key, 6)
     s = cfg.init_sigma
     return {
+        # inputs -> hidden: trained during life, and mutated at division
         "w1": jax.random.normal(k1, (cfg.n_hidden, cfg.n_inputs)) * s,
         "b1": jax.random.normal(k2, (cfg.n_hidden,)) * s,
+        # hidden -> actions: changed only by mutation at division
         "w2": jax.random.normal(k3, (cfg.n_actions, cfg.n_hidden)) * s,
         "b2": jax.random.normal(k4, (cfg.n_actions,)) * s,
+        # hidden -> predictions: trained during life, and mutated at division
+        "w3": jax.random.normal(k5, (cfg.n_predictions, cfg.n_hidden)) * s,
+        "b3": jax.random.normal(k6, (cfg.n_predictions,)) * s,
     }
 
 

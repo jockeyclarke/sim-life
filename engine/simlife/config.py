@@ -31,6 +31,15 @@ class Config:
     init_sigma: float = 0.5
     mutation_sigma: float = 0.03
 
+    # Lifetime learning. Each member predicts its next senses (the first
+    # n_predictions observation columns) and learns from its own error.
+    n_predictions: int = 6
+    initial_lr: float = 0.02
+    max_lr: float = 0.5
+    lr_mutation_sigma: float = 0.1  # learning rate mutates by about this fraction per division
+    grad_clip: float = 1.0  # cap on the size of one gradient, to stop blow-ups
+    error_smoothing: float = 0.98  # for the running average of prediction error
+
     # Lifespan, in ticks.
     lifespan_mean: int = 4000
     lifespan_jitter: int = 1000

@@ -27,7 +27,16 @@ class WorldState(NamedTuple):
     memory: Array  # (N, 2) f32, written by the network last tick
     signal: Array  # (N,) f32, emitted by the network last tick
     generation: Array  # (N,) i32 divisions since the founding network
-    params: dict  # w1 (N,H,I)  b1 (N,H)  w2 (N,A,H)  b2 (N,A)
+    params: dict  # w1 (N,H,I) b1 (N,H) w2 (N,A,H) b2 (N,A) w3 (N,P,H) b3 (N,P)
+
+    # Lifetime learning, per member.
+    birth_params: dict  # each member's weights as they were at birth
+    lr: Array  # (N,) f32 learning rate, inherited and mutated
+    prev_obs: Array  # (N, I) f32 the observation acted on last tick
+    has_prev: Array  # (N,) bool False until a member has lived one full tick
+    last_pred: Array  # (N, P) f32 the prediction that was just compared with reality
+    pred_error: Array  # (N,) f32 this tick's mean squared prediction error
+    pred_error_avg: Array  # (N,) f32 running average of pred_error
 
     # Colonies, capacity C.
     nest: Array  # (C, 2) f32
@@ -41,6 +50,11 @@ class WorldState(NamedTuple):
     patch_pos: Array  # (P, 2) f32
 
     delivered_total: Array  # () i32 pellets delivered to any nest, ever
+
+    # Switches. They live in the state, as traced values, so flipping one
+    # never recompiles and every checkpoint remembers how it was set.
+    learning_on: Array  # () bool
+    inherit_learned: Array  # () bool  True: children copy learned weights; False: birth weights
 
 
 def random_lifespan(key: Array, shape: tuple, cfg: Config) -> Array:
@@ -110,6 +124,13 @@ def init_world(key: Array, cfg: Config) -> WorldState:
         signal=jnp.zeros(N),
         generation=jnp.zeros(N, jnp.int32),
         params=params,
+        birth_params=params,
+        lr=jnp.full(N, cfg.initial_lr),
+        prev_obs=jnp.zeros((N, cfg.n_inputs)),
+        has_prev=jnp.zeros(N, bool),
+        last_pred=jnp.zeros((N, cfg.n_predictions)),
+        pred_error=jnp.zeros(N),
+        pred_error_avg=jnp.zeros(N),
         nest=nest,
         energy=jnp.where(col_alive, cfg.initial_energy, 0.0),
         col_alive=col_alive,
@@ -118,4 +139,6 @@ def init_world(key: Array, cfg: Config) -> WorldState:
         food_alive=jnp.ones(F, bool),
         patch_pos=patch_pos,
         delivered_total=jnp.int32(0),
+        learning_on=jnp.bool_(True),
+        inherit_learned=jnp.bool_(True),
     )
