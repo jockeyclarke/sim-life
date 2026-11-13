@@ -35,3 +35,71 @@ def test_world_founders_come_from_init_params():
     cfg = Config()
     s = init_world(jax.random.key(0), cfg)
     assert s.params.keys() == init_params(jax.random.key(0), cfg).keys()
+
+
+# --- stage 2: prediction and learning ------------------------------------------
+
+from simlife.brain import hidden, learn, learn_all, predict, prediction_loss  # noqa: E402
+
+CFG = Config()
+P0 = init_params(jax.random.key(11), CFG)
+X = jax.random.uniform(jax.random.key(12), (10,))
+TARGET = jax.random.uniform(jax.random.key(13), (6,))
+
+
+def same(a, b, keys=None):
+    return all(bool((a[k] == b[k]).all()) for k in (keys or a))
+
+
+def test_predict_is_a_linear_readout_of_the_hidden_layer():
+    h = hidden(P0, X)
+    assert h.shape == (8,) and bool((jnp.abs(h) <= 1).all())
+    assert jnp.allclose(predict(P0, X), P0["w3"] @ h + P0["b3"])
+
+
+def test_loss_gradient_never_touches_action_weights():
+    g = jax.grad(prediction_loss)(P0, X, TARGET)
+    assert bool((g["w2"] == 0).all()) and bool((g["b2"] == 0).all())
+    assert bool((g["w1"] != 0).any()) and bool((g["w3"] != 0).any())
+
+
+def test_learning_reduces_error_on_a_repeated_example():
+    q = P0
+    first = prediction_loss(P0, X, TARGET)
+    for _ in range(200):
+        q, _, _ = learn(q, X, TARGET, 0.05, 1.0)
+    assert prediction_loss(q, X, TARGET) < 0.05 * first
+
+
+def test_learn_reports_loss_and_prediction_from_before_the_update():
+    q, loss, pred = learn(P0, X, TARGET, 0.05, 1.0)
+    assert jnp.allclose(pred, predict(P0, X))
+    assert jnp.isclose(loss, prediction_loss(P0, X, TARGET))
+    assert same(q, P0, ["w2", "b2"]) and not same(q, P0, ["w1"])
+
+
+def test_zero_learning_rate_changes_nothing():
+    q, _, _ = learn(P0, X, TARGET, 0.0, 1.0)
+    assert same(q, P0)
+
+
+def test_gradient_clip_bounds_the_step():
+    far = jnp.full(6, 1e4)
+    q, _, _ = learn(P0, X, far, 1.0, 1.0)
+    moved = jnp.sqrt(sum(((q[k] - P0[k]) ** 2).sum() for k in P0))
+    assert 0.5 < float(moved) <= 1.0 + 1e-4
+    gentle, _, _ = learn(P0, X, predict(P0, X) + 1e-3, 1.0, 1.0)  # tiny gradient: not rescaled
+    assert float(jnp.sqrt(sum(((gentle[k] - P0[k]) ** 2).sum() for k in P0))) < 0.01
+
+
+def test_learn_all_matches_single():
+    keys = jax.random.split(jax.random.key(2), 5)
+    ps = jax.vmap(lambda k: init_params(k, CFG))(keys)
+    xs = jax.random.uniform(jax.random.key(3), (5, 10))
+    ts = jax.random.uniform(jax.random.key(4), (5, 6))
+    lrs = jnp.array([0.0, 0.01, 0.02, 0.05, 0.1])
+    qs, losses, preds = learn_all(ps, xs, ts, lrs, 1.0)
+    q3, loss3, pred3 = learn(jax.tree.map(lambda a: a[3], ps), xs[3], ts[3], lrs[3], 1.0)
+    assert all(jnp.allclose(qs[k][3], q3[k], atol=1e-6) for k in q3)
+    assert jnp.isclose(losses[3], loss3) and jnp.allclose(preds[3], pred3)
+    assert same(jax.tree.map(lambda a: a[0], qs), jax.tree.map(lambda a: a[0], ps))  # lr 0
