@@ -5,6 +5,7 @@ import type { Metrics, Status } from "./protocol";
 const metrics: Metrics = { tick: 12345, colonies: 7, members: 310, energy: 99.5, delivered: 40, max_generation: 12 };
 const status: Status = {
   run_id: "r", extinct: false, extinctions: 2, reseed_on_extinction: true, paused: false, ticks_per_frame: 1,
+  learning: true, inheritance: "learned",
 };
 
 test("the speed slider covers 1 to 1000 ticks per frame on a log scale", () => {
@@ -35,4 +36,9 @@ test("status line says when the run is extinct with reseeding off", () => {
     "extinct — reseeding is off",
   );
   expect(describeStatus(status, metrics)).not.toContain("reseeding is off");
+});
+
+test("status line still reads cleanly with the stage 2 fields present", () => {
+  const s = { ...status, learning: false, inheritance: "birth" as const };
+  expect(describeStatus(s, metrics)).toContain("tick 12,345");
 });

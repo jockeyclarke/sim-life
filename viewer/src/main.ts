@@ -3,7 +3,7 @@ import { mountControls } from "./controls";
 import { PopulationView } from "./populationView";
 import type { Snapshot } from "./protocol";
 import { cssVar, fitCanvas } from "./theme";
-import { type ColorMode, drawWorld } from "./worldView";
+import { type ColorMode, drawWorld, pickMember } from "./worldView";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#world")!;
 // Page options:  ?port=8765  the engine's port;  ?compare=<run id>|previous  preselect a comparison run
@@ -59,6 +59,15 @@ const connection = new Connection(url, {
   },
 });
 
+// Click a member to inspect it; click empty space to clear the selection.
+canvas.addEventListener("click", (event) => {
+  if (!latest) return;
+  const box = canvas.getBoundingClientRect();
+  const slot = pickMember(latest, event.clientX - box.left, event.clientY - box.top, box.width);
+  connection.send({ type: "select", slot });
+});
+canvas.style.cursor = "crosshair";
+
 // Snapshots can arrive faster than the screen refreshes; draw only the newest, once per frame.
 let lastSize = 0;
 function frame(): void {
@@ -70,6 +79,8 @@ function frame(): void {
       food: cssVar("--food"),
       muted: cssVar("--muted"),
       accent: cssVar("--accent"),
+      text: cssVar("--text"),
+      dark: matchMedia("(prefers-color-scheme: dark)").matches,
     });
     drawn = latest;
     lastSize = size;

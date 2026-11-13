@@ -7,6 +7,9 @@ export interface Metrics {
   energy: number;
   delivered: number;
   max_generation: number;
+  /** Mean prediction error and learning rate of living members. Absent in runs recorded before stage 2. */
+  pred_error?: number;
+  learning_rate?: number;
 }
 
 export interface Status {
@@ -16,6 +19,35 @@ export interface Status {
   reseed_on_extinction: boolean;
   paused: boolean;
   ticks_per_frame: number;
+  learning: boolean;
+  inheritance: "learned" | "birth";
+}
+
+/** The selected member's internals. See engine/simlife/inspect.py. */
+export interface Inspection {
+  slot: number;
+  alive: true;
+  colony: number;
+  age: number;
+  lifespan: number;
+  generation: number;
+  carrying: boolean;
+  learning_rate: number;
+  inputs: number[]; // 10
+  hidden: number[]; // 8
+  actions: number[]; // turn, speed, signal, memory 0, memory 1
+  predicted: number[]; // 6: last tick's guess
+  actual: number[]; // 6: what was then sensed
+  next_prediction: number[]; // 6
+  error: number;
+  error_avg: number;
+  weights: { w1: number[][]; b1: number[]; w2: number[][]; b2: number[]; w3: number[][]; b3: number[] };
+}
+
+/** The selected member has died. Its slot may since have been taken by a newborn. */
+export interface DeadInspection {
+  slot: number;
+  alive: false;
 }
 
 export interface RunEvent {
@@ -42,6 +74,9 @@ export type ControlMessage =
   | { type: "pause"; value: boolean }
   | { type: "speed"; ticks_per_frame: number }
   | { type: "reseed_on_extinction"; value: boolean }
+  | { type: "learning"; value: boolean }
+  | { type: "inheritance"; value: "learned" | "birth" }
+  | { type: "select"; slot: number | null }
   | { type: "list_runs" }
   | { type: "get_history"; run_id: string };
 
@@ -49,6 +84,7 @@ export interface Snapshot {
   tick: number;
   metrics: Metrics;
   status: Status;
+  inspect: Inspection | DeadInspection | null;
   /** Flat float32 data per array name; use `shapes` for the dimensions. */
   arrays: Record<string, Float32Array>;
   shapes: Record<string, number[]>;
@@ -90,7 +126,14 @@ export function decodeSnapshot(buf: ArrayBuffer): Snapshot {
     shapes[spec.name] = spec.shape;
     offset = end;
   }
-  return { tick: header.tick, metrics: header.metrics, status: header.status, arrays, shapes };
+  return {
+    tick: header.tick,
+    metrics: header.metrics,
+    status: header.status,
+    inspect: header.inspect ?? null,
+    arrays,
+    shapes,
+  };
 }
 
 export function parseServerMessage(text: string): ServerMessage | null {

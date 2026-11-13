@@ -73,11 +73,21 @@ export function mountControls(
   const colorMode = el("select", {}, [
     el("option", { value: "colony", textContent: "by colony" }),
     el("option", { value: "carrying", textContent: "by carrying food" }),
+    el("option", { value: "error", textContent: "by prediction error" }),
   ]);
   colorMode.onchange = () => options.onColorMode(colorMode.value as ColorMode);
 
   const reseed = el("input", { type: "checkbox", checked: true });
   reseed.onchange = () => send({ type: "reseed_on_extinction", value: reseed.checked });
+
+  const learning = el("input", { type: "checkbox", checked: true });
+  learning.onchange = () => send({ type: "learning", value: learning.checked });
+
+  const inheritance = el("select", {}, [
+    el("option", { value: "learned", textContent: "what the parent learned" }),
+    el("option", { value: "birth", textContent: "what the parent was born with" }),
+  ]);
+  inheritance.onchange = () => send({ type: "inheritance", value: inheritance.value as "learned" | "birth" });
 
   const overlay = el("select", {}, [el("option", { value: "", textContent: "none" })]);
   overlay.onchange = () => options.onOverlay(overlay.value || null);
@@ -90,6 +100,8 @@ export function mountControls(
     el("label", {}, ["Ticks per frame ", speedValue, speed]),
     el("label", {}, ["Colour members ", colorMode]),
     el("label", { className: "check" }, [reseed, " Start fresh colonies when all have died"]),
+    el("label", { className: "check" }, [learning, " Members learn during their lives"]),
+    el("label", {}, ["Offspring inherit ", inheritance]),
     el("label", {}, ["Compare with run ", overlay]),
   );
 
@@ -105,6 +117,11 @@ export function mountControls(
         speedValue.textContent = String(status.ticks_per_frame);
       }
       if (document.activeElement !== reseed) reseed.checked = status.reseed_on_extinction;
+      // an engine from before stage 2 sends neither field; leave the controls as they are
+      if (document.activeElement !== learning && typeof status.learning === "boolean") {
+        learning.checked = status.learning;
+      }
+      if (document.activeElement !== inheritance && status.inheritance) inheritance.value = status.inheritance;
     },
     setConnection(connected) {
       connection.textContent = connected ? "connected to the engine" : "engine not reachable — retrying";

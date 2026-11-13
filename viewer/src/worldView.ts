@@ -1,12 +1,14 @@
 import type { Snapshot } from "./protocol";
 
-export type ColorMode = "colony" | "carrying";
+export type ColorMode = "colony" | "carrying" | "error";
 
 export interface Theme {
   background: string;
   food: string;
   muted: string;
   accent: string;
+  text: string;
+  dark: boolean;
 }
 
 /** A stable colour per colony slot. The golden angle keeps neighbouring slots far apart in hue. */
@@ -18,6 +20,51 @@ export function colonyColor(slot: number): string {
 /** World coordinates (unit square) to canvas pixels. Canvas y grows downward; so does ours. */
 export function worldToCanvas(x: number, y: number, size: number): [number, number] {
   return [x * size, y * size];
+}
+
+/**
+ * Lightness (percent) for a prediction error on a one-hue scale. Error is a
+ * magnitude, so it gets a single hue running from near the background (low
+ * error) to far from it (high): darker on a light page, lighter on a dark one.
+ */
+export function errorLightness(value: number, max: number, dark: boolean): number {
+  const v = Number.isFinite(value) ? value : 0;
+  const t = max > 0 ? Math.min(1, Math.max(0, v / max)) : 0;
+  return dark ? 38 + 44 * t : 70 - 42 * t;
+}
+
+export function errorColor(value: number, max: number, dark: boolean): string {
+  return `hsl(22, 85%, ${errorLightness(value, max, dark).toFixed(1)}%)`;
+}
+
+/** The value below which `fraction` of the entries fall. Used so one outlier doesn't wash out a colour scale. */
+export function percentile(values: Float32Array, fraction: number): number {
+  if (values.length === 0) return 0;
+  const sorted = Float32Array.from(values).sort();
+  return sorted[Math.min(sorted.length - 1, Math.floor(fraction * sorted.length))]!;
+}
+
+/**
+ * The slot of the living member nearest to a canvas point, if one is within
+ * `radius` pixels. Distance is measured across the wrap-around edges.
+ */
+export function pickMember(snap: Snapshot, x: number, y: number, size: number, radius = 12): number | null {
+  const pos = snap.arrays.member_pos;
+  const slots = snap.arrays.member_slot;
+  if (!pos || !slots || size <= 0) return null;
+  const wrap = (d: number) => d - Math.round(d);
+  let best: number | null = null;
+  let bestDistance = radius;
+  for (let i = 0; i < slots.length; i++) {
+    const dx = wrap(pos[2 * i]! - x / size) * size;
+    const dy = wrap(pos[2 * i + 1]! - y / size) * size;
+    const distance = Math.hypot(dx, dy);
+    if (distance <= bestDistance) {
+      best = slots[i]!;
+      bestDistance = distance;
+    }
+  }
+  return best;
 }
 
 const TWO_PI = Math.PI * 2;
@@ -62,6 +109,10 @@ export function drawWorld(
   const heading = a.member_heading ?? new Float32Array();
   const colony = a.member_colony ?? new Float32Array();
   const carrying = a.member_carrying ?? new Float32Array();
+  const errors = a.member_error ?? new Float32Array();
+  const slots = a.member_slot ?? new Float32Array();
+  const errorMax = mode === "error" ? percentile(errors, 0.95) : 0;
+  const selected = snap.inspect?.alive ? snap.inspect.slot : null;
   const length = 6;
   ctx.lineWidth = 1.5;
   for (let i = 0; i < heading.length; i++) {
@@ -69,14 +120,31 @@ export function drawWorld(
     const dx = Math.cos(heading[i]!) * length;
     const dy = Math.sin(heading[i]!) * length;
     const isCarrying = carrying[i]! > 0.5;
-    const color = mode === "colony" ? colonyColor(colony[i]!) : isCarrying ? theme.accent : theme.muted;
+    const color =
+      mode === "colony"
+        ? colonyColor(colony[i]!)
+        : mode === "error"
+          ? errorColor(errors[i] ?? 0, errorMax, theme.dark)
+          : isCarrying
+            ? theme.accent
+            : theme.muted;
     ctx.strokeStyle = color;
     ctx.beginPath();
     ctx.moveTo(x - dx / 2, y - dy / 2);
     ctx.lineTo(x + dx / 2, y + dy / 2);
     ctx.stroke();
+    if (slots[i] === selected) {
+      // the member being inspected
+      ctx.save();
+      ctx.strokeStyle = theme.text;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y, 10, 0, TWO_PI);
+      ctx.stroke();
+      ctx.restore();
+    }
     if (isCarrying) {
-      ctx.fillStyle = mode === "colony" ? theme.food : theme.accent;
+      ctx.fillStyle = mode === "carrying" ? theme.accent : theme.food;
       ctx.beginPath();
       ctx.arc(x + dx / 2, y + dy / 2, 2, 0, TWO_PI);
       ctx.fill();
