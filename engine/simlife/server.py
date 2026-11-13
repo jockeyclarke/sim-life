@@ -125,6 +125,9 @@ class SimServer:
                 await asyncio.wait_for(viewer.send(message), SEND_TIMEOUT)
             except Exception:  # noqa: BLE001 - any failing viewer must not stop the engine
                 self._viewers.discard(viewer)
+                # Cut the connection too, so the page notices and reconnects
+                # instead of showing "connected" over a frozen picture.
+                viewer.transport.abort()
 
     # --- one viewer ----------------------------------------------------------
 

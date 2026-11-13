@@ -35,7 +35,8 @@ In a second terminal, start the viewer and open the address it prints
 cd viewer && npm run dev
 ```
 
-Stop the engine with Ctrl-C. It saves a checkpoint on the way out.
+Stop the engine with Ctrl-C. It saves a checkpoint on the way out, and a
+resumed run keeps the switches it was left with.
 
 ### Without a viewer
 
@@ -57,6 +58,7 @@ Stop the engine with Ctrl-C. It saves a checkpoint on the way out.
 | `--ticks N` | none | Stop after N ticks. |
 | `--no-serve` | off | Don't start the viewer server. Requires `--ticks`. |
 | `--resume RUN_DIR` | none | Continue a recorded run from its latest checkpoint. |
+| `--no-reseed` | off | When every colony has died, stop instead of starting fresh ones. |
 | `--runs-dir DIR` | `runs` | Where runs are recorded. |
 | `--host`, `--port` | 127.0.0.1, 8765 | Where the viewer server listens. |
 
@@ -84,7 +86,7 @@ Each run gets a directory under `runs/`:
 | File | Contents |
 |---|---|
 | `settings.json` | The seed and every setting. |
-| `history.jsonl` | One record every 100 ticks. |
+| `history.jsonl` | One record of measures every 100 ticks, plus a line for each extinction or fresh start at the tick it happened. |
 | `checkpoints/state-<tick>.npz` | The full world state, every 50,000 ticks and on exit. |
 
 ## Settings

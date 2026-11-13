@@ -19,6 +19,19 @@ export function reseedTicks(records: HistoryRecord[]): number[] {
   return records.flatMap((r) => (r.events ?? []).filter((e) => e.event === "reseed").map((e) => e.tick));
 }
 
+/**
+ * The record closest to a tick, ignoring event-only lines (which carry a tick
+ * and an event but no measures).
+ */
+export function nearestMeasured(records: HistoryRecord[], tick: number): HistoryRecord | null {
+  let best: HistoryRecord | null = null;
+  for (const record of records) {
+    if (typeof record.members !== "number") continue;
+    if (best === null || Math.abs(record.tick - tick) < Math.abs(best.tick - tick)) best = record;
+  }
+  return best;
+}
+
 export interface Scale {
   lo: number;
   hi: number;
@@ -206,8 +219,8 @@ export class PopulationView {
       if (this.hoverTick !== null) {
         let right = PAD.left + plotW;
         const entries: [HistoryRecord | null, string, number[]][] = [
-          [this.overlayId === null ? null : this.nearest(this.overlay, this.hoverTick), colors.overlay, [3, 2]],
-          [this.nearest(this.current, this.hoverTick), colors.current, []],
+          [this.overlayId === null ? null : nearestMeasured(this.overlay, this.hoverTick), colors.overlay, [3, 2]],
+          [nearestMeasured(this.current, this.hoverTick), colors.current, []],
         ];
         for (const [record, color, dash] of entries) {
           const v = record?.[chart.field];
@@ -307,15 +320,7 @@ export class PopulationView {
     });
 
     // One line of text says which tick the crosshair is on; the values sit on each chart's title row.
-    const at = this.hoverTick === null ? null : (this.nearest(this.current, this.hoverTick) ?? this.nearest(this.overlay, this.hoverTick));
+    const at = this.hoverTick === null ? null : (nearestMeasured(this.current, this.hoverTick) ?? nearestMeasured(this.overlay, this.hoverTick));
     this.readout.textContent = at ? `at tick ${at.tick.toLocaleString("en-US")}` : "hover a chart to read values";
-  }
-
-  private nearest(records: HistoryRecord[], tick: number): HistoryRecord | null {
-    let best: HistoryRecord | null = null;
-    for (const record of records) {
-      if (best === null || Math.abs(record.tick - tick) < Math.abs(best.tick - tick)) best = record;
-    }
-    return best;
   }
 }

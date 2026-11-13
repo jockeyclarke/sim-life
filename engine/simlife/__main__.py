@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import argparse
 import shutil
+import signal
 import sys
 from pathlib import Path
 
 from .config import Config
-from .recorder import Recorder, resume_run
+from .recorder import Recorder
 from .runner import Runner
 
 HEADLESS_CHUNK = 500
@@ -25,6 +26,8 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--ticks", type=int, help="stop after this many ticks")
     run.add_argument("--no-serve", action="store_true",
                      help="run without the viewer server (requires --ticks)")
+    run.add_argument("--no-reseed", action="store_true",
+                     help="when every colony has died, stop instead of starting fresh ones")
     run.add_argument("--host", default="127.0.0.1")
     run.add_argument("--port", type=int, default=8765)
     return parser
@@ -32,31 +35,46 @@ def build_parser() -> argparse.ArgumentParser:
 
 def make_runner(args: argparse.Namespace) -> Runner:
     if args.resume:
-        r = resume_run(args.resume)
-        return Runner(r.cfg, r.seed, r.recorder, state=r.state, extinctions=r.extinctions)
-    cfg = Config()
-    return Runner(cfg, args.seed, Recorder(args.runs_dir, cfg, args.seed))
+        runner = Runner.resume(args.resume)  # keeps the switches the run was left with
+    else:
+        cfg = Config()
+        runner = Runner(cfg, args.seed, Recorder(args.runs_dir, cfg, args.seed))
+    if args.no_reseed:
+        runner.reseed_on_extinction = False
+    return runner
 
 
 def run_headless(runner: Runner, ticks: int) -> None:
-    done = 0
+    stop = False
+
+    def request_stop(signum, frame):
+        nonlocal stop
+        stop = True
+
+    # Finish the chunk in hand, then save: on Ctrl-C and on an ordinary terminate.
+    signal.signal(signal.SIGINT, request_stop)
+    signal.signal(signal.SIGTERM, request_stop)
+
+    print(f"simlife: run {runner.recorder.run_id} headless for {ticks:,} ticks", flush=True)
+    start = int(runner.state.tick)
     try:
-        while done < ticks:
-            n = min(HEADLESS_CHUNK, ticks - done)
-            for record in runner.advance(n):
-                if record["tick"] % 5000 == 0 or record.get("events"):
+        while not stop and int(runner.state.tick) - start < ticks:
+            n = min(HEADLESS_CHUNK, ticks - (int(runner.state.tick) - start))
+            for line in runner.advance(n):
+                for event in line.get("events", []):
+                    print(f"tick {event['tick']:>9}  {event['event']}", flush=True)
+                if "members" in line and line["tick"] % 5000 == 0:
                     print(
-                        f"tick {record['tick']:>9}  colonies {record['colonies']:>3}  "
-                        f"members {record['members']:>5}  "
-                        f"delivery rate {record['delivery_rate']:.5f}",
+                        f"tick {line['tick']:>9}  colonies {line['colonies']:>3}  "
+                        f"members {line['members']:>5}  "
+                        f"delivery rate {line['delivery_rate']:.5f}",
                         flush=True,
                     )
             if runner.extinct:
                 print("every colony has died and reseeding is off; stopping", flush=True)
                 break
-            done += n
-    except KeyboardInterrupt:
-        print("interrupted", flush=True)
+        if stop:
+            print("interrupted", flush=True)
     finally:
         runner.checkpoint()
         print(f"run saved in {runner.recorder.run_dir}", flush=True)
@@ -83,7 +101,9 @@ def main(argv: list[str] | None = None) -> int:
     from .server import ListenError, serve
 
     try:
-        asyncio.run(serve(runner, args.runs_dir, args.host, args.port, ticks=args.ticks))
+        # a resumed run may live outside --runs-dir; serve the directory it is actually in
+        runs_dir = runner.recorder.run_dir.parent
+        asyncio.run(serve(runner, runs_dir, args.host, args.port, ticks=args.ticks))
     except ListenError as error:
         print(
             f"error: cannot listen on {args.host} port {args.port} ({error.strerror}). "

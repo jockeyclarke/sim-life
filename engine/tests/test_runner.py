@@ -14,7 +14,7 @@ cfg = Config(
 )
 doomed = Config(
     capacity_members=256, capacity_colonies=16, capacity_food=64, initial_colonies=4,
-    initial_energy=0.001,
+    initial_energy=0.001, food_energy=0.0,  # dies on tick 1, and food cannot save it
 )
 
 
@@ -31,6 +31,7 @@ def test_runner_records_on_interval_and_resume_matches_uninterrupted(tmp_path):
     b.checkpoint()
     r = resume_run(b.recorder.run_dir)
     b2 = Runner(r.cfg, r.seed, r.recorder, state=r.state, extinctions=r.extinctions)
+    assert r.reseed_on_extinction is True and r.extinct is False
     b2.advance(150)
 
     assert states_equal(a.state, b2.state)
@@ -61,7 +62,7 @@ def test_reseeded_worlds_differ_from_each_other(tmp_path):
     r.advance(50)
     first = r.state.nest
     r.advance(50)
-    assert r.extinctions == 2 and not bool((r.state.nest == first).all())
+    assert r.extinctions >= 2 and not bool((r.state.nest == first).all())
 
 
 def test_extinction_with_reseed_off_idles(tmp_path):
@@ -79,9 +80,10 @@ def test_turning_reseed_back_on_revives_an_extinct_run(tmp_path):
     r = Runner(doomed, 0, Recorder(tmp_path, doomed, 0))
     r.reseed_on_extinction = False
     r.advance(50)
+    t = int(r.state.tick)  # stopped on the tick of extinction
     r.reseed_on_extinction = True
     r.advance(10)
-    assert not r.extinct and r.extinctions >= 1 and int(r.state.tick) == 60
+    assert not r.extinct and r.extinctions >= 1 and int(r.state.tick) == t + 10
 
 
 def test_cli_headless_run(tmp_path):
@@ -147,3 +149,122 @@ def test_cli_terminate_signal_saves_the_run(tmp_path):
     assert "run saved" in out and "Traceback" not in err
     (run_dir,) = list(tmp_path.iterdir())
     assert len(list((run_dir / "checkpoints").glob("state-*.npz"))) >= 1
+
+
+# --- review fixes: extinction, resume, serving -------------------------------
+
+import json as _json  # noqa: E402
+
+from simlife.__main__ import build_parser, make_runner  # noqa: E402
+
+fragile = Config(
+    capacity_members=256, capacity_colonies=16, capacity_food=64, initial_colonies=4,
+    initial_energy=0.5,
+)
+
+
+def reseed_ticks(run_dir):
+    return [e["tick"] for e in events_of(run_dir) if e["event"] == "reseed"]
+
+
+def test_reseed_ticks_do_not_depend_on_chunk_size(tmp_path):
+    a = Runner(fragile, 0, Recorder(tmp_path / "a", fragile, 0))
+    a.advance(500)
+    a.advance(500)
+    b = Runner(fragile, 0, Recorder(tmp_path / "b", fragile, 0))
+    for _ in range(142):
+        b.advance(7)
+    b.advance(6)
+    assert a.extinctions == b.extinctions >= 2
+    assert reseed_ticks(a.recorder.run_dir) == reseed_ticks(b.recorder.run_dir)
+    assert states_equal(a.state, b.state)
+
+
+def test_reseed_event_survives_an_exit_before_the_next_record(tmp_path):
+    r = Runner(doomed, 0, Recorder(tmp_path, doomed, 0))
+    while r.extinctions == 0:
+        r.advance(7)
+    assert int(r.state.tick) < 100
+    r.checkpoint()  # e.g. Ctrl-C right after a reseed
+    assert len(reseed_ticks(r.recorder.run_dir)) == r.extinctions >= 1
+
+    r2 = Runner.resume(r.recorder.run_dir)
+    r2.advance(100)
+    assert len(reseed_ticks(r2.recorder.run_dir)) == r2.extinctions
+
+
+def test_resume_keeps_the_reseed_switch_and_the_extinct_state(tmp_path):
+    r = Runner(doomed, 0, Recorder(tmp_path, doomed, 0))
+    r.reseed_on_extinction = False
+    r.advance(50)
+    assert r.extinct
+    t = int(r.state.tick)
+    r.checkpoint()
+
+    r2 = Runner.resume(r.recorder.run_dir)
+    assert r2.reseed_on_extinction is False and r2.extinct
+    r2.advance(50)
+    assert int(r2.state.tick) == t
+    assert [e["event"] for e in events_of(r2.recorder.run_dir)] == ["extinct"]
+
+
+def test_cli_no_reseed_flag_turns_the_switch_off(tmp_path):
+    args = build_parser().parse_args(["run", "--no-reseed", "--runs-dir", str(tmp_path)])
+    assert make_runner(args).reseed_on_extinction is False
+    args = build_parser().parse_args(["run", "--runs-dir", str(tmp_path)])
+    assert make_runner(args).reseed_on_extinction is True
+
+
+def free_port():
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+def test_cli_resume_from_another_directory_serves_the_runs_history(tmp_path):
+    from websockets.sync.client import connect
+
+    data = tmp_path / "data"
+    subprocess.run(
+        [sys.executable, "-m", "simlife", "run", "--no-serve", "--ticks", "300",
+         "--seed", "1", "--runs-dir", str(data)],
+        check=True, capture_output=True, timeout=120,
+    )
+    (run_dir,) = list(data.iterdir())
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    port = free_port()
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "simlife", "run", "--resume", str(run_dir), "--port", str(port)],
+        cwd=elsewhere, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    try:
+        assert "serving" in proc.stdout.readline()
+        with connect(f"ws://127.0.0.1:{port}") as ws:
+            runs = _json.loads(ws.recv(timeout=30))
+            history = _json.loads(ws.recv(timeout=30))
+        assert run_dir.name in runs["runs"]
+        assert [r["tick"] for r in history["records"]][:3] == [100, 200, 300]
+    finally:
+        proc.send_signal(signal.SIGTERM)
+        proc.communicate(timeout=30)
+
+
+def test_cli_headless_run_saves_on_terminate(tmp_path):
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "simlife", "run", "--no-serve", "--ticks", "100000000",
+         "--runs-dir", str(tmp_path)],
+        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    try:
+        assert "headless" in proc.stdout.readline()
+        time.sleep(4.0)
+        proc.send_signal(signal.SIGTERM)
+        out, err = proc.communicate(timeout=60)
+    finally:
+        proc.kill()
+    assert proc.returncode == 0, err
+    assert "run saved" in out and "Traceback" not in err
+    (run_dir,) = list(tmp_path.iterdir())
+    (checkpoint,) = list((run_dir / "checkpoints").glob("state-*.npz"))
+    assert int(checkpoint.stem.split("-")[1]) > 0

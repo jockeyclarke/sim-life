@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { niceScale, reseedTicks, seriesOf } from "./populationView";
+import { nearestMeasured, niceScale, reseedTicks, seriesOf } from "./populationView";
 import type { HistoryRecord } from "./protocol";
 
 test("seriesOf sorts by tick and skips non-finite values", () => {
@@ -44,4 +44,16 @@ test("reseedTicks collects reseed events only", () => {
     { tick: 300, events: [{ event: "extinct", tick: 300 }, { event: "reseed", tick: 250 }] },
   ] as HistoryRecord[];
   expect(reseedTicks(recs)).toEqual([70, 250]);
+});
+
+test("event-only history lines mark reseeds but add no data points", () => {
+  const recs = [
+    { tick: 100, members: 5 },
+    { tick: 142, events: [{ event: "reseed", tick: 142 }] },
+    { tick: 200, members: 7 },
+  ] as HistoryRecord[];
+  expect(seriesOf(recs, "members")).toEqual([[100, 5], [200, 7]]);
+  expect(reseedTicks(recs)).toEqual([142]);
+  expect(nearestMeasured(recs, 150)?.tick).toBe(100);
+  expect(nearestMeasured([recs[1]!], 150)).toBeNull();
 });

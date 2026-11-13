@@ -21,11 +21,14 @@ from .config import Config
 from .state import WorldState, init_world
 
 _PARAM_PREFIX = "params."
-_EXTINCTIONS = "_extinctions"
+_EXTRA_PREFIX = "_runner."
 
 
-def save_state(path: Path, state: WorldState, extinctions: int = 0) -> None:
-    """Write a checkpoint. The file appears under its final name only when complete."""
+def save_state(path: Path, state: WorldState, extra: dict | None = None) -> None:
+    """Write a checkpoint. The file appears under its final name only when complete.
+
+    `extra` holds the runner's own small numbers and switches (see Runner).
+    """
     arrays = {}
     for name, value in state._asdict().items():
         if name == "key":
@@ -35,7 +38,8 @@ def save_state(path: Path, state: WorldState, extinctions: int = 0) -> None:
                 arrays[_PARAM_PREFIX + pname] = np.asarray(pvalue)
         else:
             arrays[name] = np.asarray(value)
-    arrays[_EXTINCTIONS] = np.asarray(extinctions)
+    for name, value in (extra or {}).items():
+        arrays[_EXTRA_PREFIX + name] = np.asarray(value)
 
     path = Path(path)
     tmp = path.with_name(path.name + ".tmp")
@@ -44,7 +48,7 @@ def save_state(path: Path, state: WorldState, extinctions: int = 0) -> None:
     os.replace(tmp, path)
 
 
-def _load(path: Path, cfg: Config) -> tuple[WorldState, int]:
+def _load(path: Path, cfg: Config) -> tuple[WorldState, dict]:
     template = init_world(jax.random.key(0), cfg)
     with np.load(path) as data:
         fields = {}
@@ -66,8 +70,12 @@ def _load(path: Path, cfg: Config) -> tuple[WorldState, int]:
                         f"'{label}' has shape {got.shape} but the capacity settings "
                         f"give {want.shape}"
                     )
-        extinctions = int(data[_EXTINCTIONS]) if _EXTINCTIONS in data else 0
-    return WorldState(**fields), extinctions
+        extra = {
+            name[len(_EXTRA_PREFIX):]: data[name].item()
+            for name in data.files
+            if name.startswith(_EXTRA_PREFIX)
+        }
+    return WorldState(**fields), extra
 
 
 def load_state(path: Path, cfg: Config) -> WorldState:
@@ -104,9 +112,9 @@ class Recorder:
         if _existing is not None:
             self.run_dir = Path(_existing)
             self.run_id = self.run_dir.name
-            history = read_history(self.run_dir)
-            if history:
-                self._previous = (history[-1]["tick"], history[-1]["delivered"])
+            measured = [r for r in read_history(self.run_dir) if "delivered" in r]
+            if measured:
+                self._previous = (measured[-1]["tick"], measured[-1]["delivered"])
             return
 
         base = f"{time.strftime('%Y%m%d-%H%M%S')}-s{seed}"
@@ -144,9 +152,20 @@ class Recorder:
             f.write(json.dumps(record) + "\n")
         return record
 
-    def checkpoint(self, state: WorldState, extinctions: int = 0) -> Path:
+    def event(self, event: dict) -> dict:
+        """Append an event-only line straight away, so it survives an exit.
+
+        Event lines carry a tick and the event but no measures; readers that
+        chart measures skip them.
+        """
+        line = {"tick": event["tick"], "events": [event]}
+        with open(self.run_dir / "history.jsonl", "a") as f:
+            f.write(json.dumps(line) + "\n")
+        return line
+
+    def checkpoint(self, state: WorldState, extra: dict | None = None) -> Path:
         path = self.run_dir / "checkpoints" / f"state-{int(state.tick):012d}.npz"
-        save_state(path, state, extinctions)
+        save_state(path, state, extra)
         return path
 
 
@@ -156,6 +175,8 @@ class Resumed(NamedTuple):
     cfg: Config
     seed: int
     extinctions: int
+    reseed_on_extinction: bool
+    extinct: bool
 
 
 def resume_run(run_dir: Path) -> Resumed:
@@ -168,7 +189,7 @@ def resume_run(run_dir: Path) -> Resumed:
     checkpoints = sorted((run_dir / "checkpoints").glob("state-*.npz"))
     if not checkpoints:
         raise FileNotFoundError(f"no checkpoint to resume from in {run_dir}")
-    state, extinctions = _load(checkpoints[-1], cfg)
+    state, extra = _load(checkpoints[-1], cfg)
 
     # Drop history written after that checkpoint; those ticks will be re-run.
     tick = int(state.tick)
@@ -178,4 +199,12 @@ def resume_run(run_dir: Path) -> Resumed:
     os.replace(tmp, run_dir / "history.jsonl")
 
     recorder = Recorder(run_dir.parent, cfg, settings["seed"], _existing=run_dir)
-    return Resumed(recorder, state, cfg, settings["seed"], extinctions)
+    return Resumed(
+        recorder,
+        state,
+        cfg,
+        settings["seed"],
+        extinctions=int(extra.get("extinctions", 0)),
+        reseed_on_extinction=bool(extra.get("reseed_on_extinction", True)),
+        extinct=bool(extra.get("extinct", False)),
+    )

@@ -149,3 +149,22 @@ async def test_get_history_returns_a_known_run(server):
                 if isinstance(message, str) and json.loads(message)["type"] == "history":
                     assert json.loads(message)["run_id"] == run_id
                     break
+
+
+async def test_a_viewer_that_fails_a_send_is_disconnected(server):
+    class FailingViewer:
+        def __init__(self):
+            self.aborted = False
+            self.transport = self
+
+        async def send(self, message):
+            raise ConnectionError("gone")
+
+        def abort(self):
+            self.aborted = True
+
+    viewer = FailingViewer()
+    server._viewers.add(viewer)
+    await server._broadcast(b"frame")
+    assert viewer not in server._viewers
+    assert viewer.aborted  # otherwise the page shows "connected" with a frozen picture

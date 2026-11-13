@@ -42,9 +42,23 @@ def step(state: WorldState, cfg: Config) -> WorldState:
 
 @partial(jax.jit, static_argnames=("cfg",))
 def run_ticks(state: WorldState, cfg: Config, n: int) -> WorldState:
-    """n ticks in one compiled call.
+    """Up to n ticks in one compiled call, stopping early if every colony dies.
 
     cfg is a compile-time constant (changing it recompiles). n is an ordinary
     runtime value, so any chunk size reuses the same compiled loop.
+
+    Stopping on the exact tick of extinction is what lets the runner start
+    fresh colonies at the same tick however the run is chunked. The caller
+    reads how far it got from the returned state's tick.
     """
-    return jax.lax.fori_loop(0, n, lambda _, s: step(s, cfg), state)
+
+    def keep_going(carry):
+        i, s = carry
+        return (i < n) & s.col_alive.any()
+
+    def one_tick(carry):
+        i, s = carry
+        return i + 1, step(s, cfg)
+
+    _, final = jax.lax.while_loop(keep_going, one_tick, (jnp.int32(0), state))
+    return final

@@ -23,6 +23,11 @@ export interface RunEvent {
   tick: number;
 }
 
+/**
+ * One line of a run's history. Most lines are measures taken every 100 ticks.
+ * A few are event-only lines (tick and events, no measures), written the
+ * moment something happens; code that charts measures must skip those.
+ */
 export interface HistoryRecord extends Metrics {
   delivery_rate: number;
   events?: RunEvent[];
