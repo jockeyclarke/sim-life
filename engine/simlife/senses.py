@@ -15,27 +15,39 @@ def wrap_delta(a: Array, b: Array) -> Array:
     return (a - b + 0.5) % 1.0 - 0.5
 
 
+def wrap01(p: Array) -> Array:
+    """Wrap coordinates into [0, 1).
+
+    In float32, `x % 1.0` returns exactly 1.0 for a tiny negative x, which
+    would put an entity outside the world, so that case is folded back to 0.
+    """
+    p = p % 1.0
+    return jnp.where(p >= 1.0, 0.0, p)
+
+
+def torus_distance(a: Array, b: Array) -> Array:
+    return jnp.sqrt((wrap_delta(a, b) ** 2).sum(-1))
+
+
 def sensor_points(pos: Array, heading: Array, cfg: Config) -> tuple[Array, Array]:
     """Two sample points ahead of each entity, to the left and right of its heading."""
 
     def point(angle: Array) -> Array:
         direction = jnp.stack([jnp.cos(angle), jnp.sin(angle)], axis=-1)
-        return (pos + cfg.sensor_distance * direction) % 1.0
+        return wrap01(pos + cfg.sensor_distance * direction)
 
     return point(heading + cfg.sensor_angle), point(heading - cfg.sensor_angle)
 
 
 def food_scent(points: Array, food_pos: Array, food_alive: Array, cfg: Config) -> Array:
     """Sum over live pellets of exp(-distance / food_scent_length), per point."""
-    delta = wrap_delta(points[:, None, :], food_pos[None, :, :])  # (M, F, 2)
-    dist = jnp.sqrt((delta**2).sum(-1))
+    dist = torus_distance(points[:, None, :], food_pos[None, :, :])  # (M, F)
     return jnp.where(food_alive, jnp.exp(-dist / cfg.food_scent_length), 0.0).sum(1)
 
 
 def nest_scent(points: Array, nest: Array, cfg: Config) -> Array:
     """exp(-distance / nest_scent_length) from each point to its paired nest."""
-    dist = jnp.sqrt((wrap_delta(points, nest) ** 2).sum(-1))
-    return jnp.exp(-dist / cfg.nest_scent_length)
+    return jnp.exp(-torus_distance(points, nest) / cfg.nest_scent_length)
 
 
 def neighbour_stats(state: WorldState, cfg: Config) -> tuple[Array, Array]:

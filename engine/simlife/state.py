@@ -59,7 +59,8 @@ def patch_positions(key: Array, patch_pos: Array, cfg: Config) -> Array:
     radius = cfg.patch_radius * jnp.sqrt(jax.random.uniform(kr, (F,)))
     centre = patch_pos[jnp.arange(F) % cfg.num_patches]
     offset = radius[:, None] * jnp.stack([jnp.cos(angle), jnp.sin(angle)], axis=1)
-    return (centre + offset) % 1.0
+    p = (centre + offset) % 1.0
+    return jnp.where(p >= 1.0, 0.0, p)  # see senses.wrap01
 
 
 def init_world(key: Array, cfg: Config) -> WorldState:
