@@ -51,3 +51,59 @@ def test_observation_passes_through_carrying_and_memory_and_zeroes_dead():
     assert obs[0, 9] == 1 and jnp.allclose(obs[0, 11:], jnp.array([0.3, -0.7]))
     assert jnp.isclose(obs[0, 10], jnp.tanh(10.0 / 100))
     assert bool((obs[5] == 0).all())
+
+
+# --- stage 3: territory and foreign members --------------------------------------
+
+import dataclasses  # noqa: E402
+
+from simlife.senses import foreign_nearby  # noqa: E402
+
+tcfg = dataclasses.replace(cfg, territory_grid=8, n_families=2)
+
+
+def scented(s, family, value=5.0):
+    return s._replace(territory=jnp.zeros((2, 8, 8)).at[family].set(value))
+
+
+def test_territory_sense_is_positive_on_own_ground_and_negative_on_foreign():
+    s = member(blank(tcfg), 0, (0.5, 0.5), colony=0)  # colony 0 is family 0
+    home = observe(scented(s, 0), tcfg)
+    away = observe(scented(s, 1), tcfg)
+    assert home[0, 6] > 0.9 and home[0, 7] > 0.9
+    assert away[0, 6] < -0.9 and away[0, 7] < -0.9
+    assert observe(s._replace(territory=jnp.zeros((2, 8, 8))), tcfg)[0, 6] == 0
+
+
+def test_territory_sense_compares_left_and_right():
+    # heading 0 (along +x): the left sensor is at larger y. Mark only the cell above.
+    s = member(blank(tcfg), 0, (0.56, 0.495), heading=0.0, colony=0)
+    left_cell_y = int((0.495 + 0.02 * jnp.sin(0.6)) * 8)
+    t = jnp.zeros((2, 8, 8)).at[0, left_cell_y, 4].set(5.0)
+    obs = observe(s._replace(territory=t), tcfg)
+    assert obs[0, 6] > obs[0, 7]
+
+
+def test_foreign_nearby_counts_other_families_only():
+    c = dataclasses.replace(cfg, capacity_colonies=3, initial_colonies=3, n_families=2)
+    s = blank(c)  # colonies 0 and 2 are family 0; colony 1 is family 1
+    s = member(s, 0, (0.51, 0.51), colony=0)
+    s = member(s, 1, (0.52, 0.52), colony=0)  # colony-mate
+    s = member(s, 2, (0.515, 0.51), colony=2)  # same family, other colony
+    s = member(s, 3, (0.512, 0.52), colony=1)  # foreign
+    s = member(s, 4, (0.518, 0.515), colony=1)  # foreign
+    s = member(s, 5, (0.9, 0.9), colony=1)  # foreign but far away
+    near = foreign_nearby(s, c)
+    assert jnp.isclose(near[0], jnp.tanh(2 / 4))
+    assert jnp.isclose(near[3], jnp.tanh(3 / 4))  # members 0, 1, 2 are foreign to it
+    assert near[5] == 0 and near[6] == 0  # far away; dead
+    assert jnp.isclose(observe(s, c)[0, 8], near[0])
+
+
+def test_observation_column_order():
+    s = member(blank(tcfg), 0, (0.5, 0.5), carrying=True, memory=[0.3, -0.7])
+    obs = observe(s, tcfg)
+    assert obs.shape == (8, 13)
+    assert obs[0, 9] == 1 and jnp.isclose(obs[0, 10], jnp.tanh(10.0 / 100))
+    assert jnp.allclose(obs[0, 11:], jnp.array([0.3, -0.7]))
+    assert bool((obs[1:] == 0).all())
