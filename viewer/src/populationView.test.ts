@@ -57,3 +57,24 @@ test("event-only history lines mark reseeds but add no data points", () => {
   expect(nearestMeasured(recs, 150)?.tick).toBe(100);
   expect(nearestMeasured([recs[1]!], 150)).toBeNull();
 });
+
+import { eventTicks } from "./populationView";
+
+test("eventTicks collects events by name", () => {
+  const recs = [
+    { tick: 30, events: [{ event: "switch", tick: 30, name: "learning", value: false }] },
+    { tick: 100, members: 4 },
+    { tick: 142, events: [{ event: "reseed", tick: 142 }] },
+    { tick: 150, events: [{ event: "switch", tick: 150 }, { event: "extinct", tick: 150 }] },
+  ] as HistoryRecord[];
+  expect(eventTicks(recs, "switch")).toEqual([30, 150]);
+  expect(eventTicks(recs, "reseed")).toEqual([142]);
+  expect(reseedTicks(recs)).toEqual([142]);
+  expect(eventTicks(recs, "nope")).toEqual([]);
+});
+
+test("a stage 1 history draws no points on the new charts", () => {
+  const old = [{ tick: 100, members: 5, colonies: 1, energy: 3, delivered: 0, max_generation: 0, delivery_rate: 0 }] as HistoryRecord[];
+  expect(seriesOf(old, "pred_error")).toEqual([]);
+  expect(seriesOf(old, "learning_rate")).toEqual([]);
+});

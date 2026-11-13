@@ -51,8 +51,10 @@ export interface DeadInspection {
 }
 
 export interface RunEvent {
-  event: string;
+  event: string; // "reseed" | "extinct" | "switch"
   tick: number;
+  name?: string; // for a switch: which one
+  value?: boolean;
 }
 
 /**

@@ -5,9 +5,10 @@ neural network, forage for food in a shared world. There is no fitness
 function: a colony lives while its shared energy pool lasts, grows when it has
 a surplus, splits when it gets large, and dies when it runs out.
 
-This is stage 1 of three: evolution only. Networks change only by mutation
-when a member divides. Lifetime learning (stage 2) and poison (stage 3) are
-described in [the design](docs/superpowers/specs/2026-11-12-colony-life-sim-design.md).
+This is stage 2 of three. Networks change in two ways: by mutation when a
+member divides, and during life, as each member learns to predict its own
+next senses. Poison (stage 3) is described in
+[the design](docs/superpowers/specs/2026-11-12-colony-life-sim-design.md).
 
 ## Setup
 
@@ -59,6 +60,8 @@ resumed run keeps the switches it was left with.
 | `--no-serve` | off | Don't start the viewer server. Requires `--ticks`. |
 | `--resume RUN_DIR` | none | Continue a recorded run from its latest checkpoint. |
 | `--no-reseed` | off | When every colony has died, stop instead of starting fresh ones. |
+| `--no-learning` | off | Switch lifetime learning off, for a pure-evolution run. |
+| `--inherit learned\|birth` | learned | What offspring copy: what the parent learned, or what the parent was born with. |
 | `--runs-dir DIR` | `runs` | Where runs are recorded. |
 | `--host`, `--port` | 127.0.0.1, 8765 | Where the viewer server listens. |
 
@@ -72,8 +75,24 @@ resumed run keeps the switches it was left with.
 - **Start fresh colonies when all have died.** If every colony dies, the run
   begins again with new random colonies and marks the moment on the charts.
   Colonies are never added while any colony is alive.
-- **Population.** Colonies, members, total energy, and food delivered per
-  member per tick. The last is the measure of how well the population forages.
+- **Members learn during their lives.** Switches lifetime learning on or off.
+  Prediction error is still measured when it is off, so the two can be
+  compared.
+- **Offspring inherit.** Whether a new member copies what its parent learned
+  or what its parent was born with. Both switches can be flipped mid-run;
+  each flip is marked on the charts and recorded in the run's history.
+- **Colour members by prediction error.** Members whose predictions are
+  furthest off stand out most.
+- **Inspector.** Click a member to select it; click empty space to clear.
+  The panel shows what it senses, its hidden activations and actions this
+  tick, its last prediction against what happened, its prediction error
+  since you selected it, and its weights. "Show change since selected"
+  switches the weights to how far each has moved: the action weights never
+  move during a life, the others do.
+- **Population.** Colonies, members, total energy, food delivered per member
+  per tick, mean prediction error, and mean learning rate. The learning rate
+  is inherited and mutates, so its drift shows whether evolution is turning
+  learning up or down.
 - **Compare with run.** Overlays a recorded run on the charts as a dashed line.
 
 Page options: `?port=8765` sets the engine's port, and `?compare=previous`
@@ -88,6 +107,10 @@ Each run gets a directory under `runs/`:
 | `settings.json` | The seed and every setting. |
 | `history.jsonl` | One record of measures every 100 ticks, plus a line for each extinction or fresh start at the tick it happened. |
 | `checkpoints/state-<tick>.npz` | The full world state, every 50,000 ticks and on exit. |
+
+Runs recorded before lifetime learning was added (stage 1) cannot be resumed,
+because their checkpoints lack the learning state. Their histories still load
+for comparison.
 
 ## Settings
 
@@ -104,18 +127,20 @@ The engine is written so the whole simulation is one pure function,
 | File | What to read it for |
 |---|---|
 | [state.py](engine/simlife/state.py) | The world as one record of arrays; how it is initialised. |
-| [brain.py](engine/simlife/brain.py) | The network, written for one entity and lifted over the population with `vmap`. |
+| [brain.py](engine/simlife/brain.py) | The network and its learning step, written for one entity and lifted over the population with `vmap`. The gradient comes from `jax.value_and_grad`. |
+| [learning.py](engine/simlife/learning.py) | The learning phase of a tick: score last tick's prediction, take a gradient step. |
 | [senses.py](engine/simlife/senses.py) | The 10 inputs; neighbour statistics without comparing every pair. |
 | [physics.py](engine/simlife/physics.py) | Movement, food pickup with contention, delivery, energy costs. |
 | [lifecycle.py](engine/simlife/lifecycle.py) | Births into fixed-capacity arrays, mutation, colony splitting. |
 | [step.py](engine/simlife/step.py) | The order of one tick, and the compiled loop. |
 | [runner.py](engine/simlife/runner.py) | Recording, checkpoints, and what happens at extinction. |
+| [inspect.py](engine/simlife/inspect.py) | One member's internals read out of the population arrays. |
 | [protocol.py](engine/simlife/protocol.py), [server.py](engine/simlife/server.py) | The snapshot format and the viewer server. |
 
 ## Tests
 
 ```sh
-.venv/bin/pytest                 # engine, about 30 seconds
+.venv/bin/pytest                 # engine, about a minute
 .venv/bin/pytest -m slow         # does a default world take hold? about 3 minutes
 cd viewer && npm test            # viewer
 ```

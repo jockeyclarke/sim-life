@@ -1,7 +1,7 @@
 import type { HistoryRecord } from "./protocol";
 import { cssVar, fitCanvas } from "./theme";
 
-type Field = "colonies" | "members" | "energy" | "delivery_rate";
+type Field = "colonies" | "members" | "energy" | "delivery_rate" | "pred_error" | "learning_rate";
 type Point = [tick: number, value: number];
 
 /** (tick, value) pairs sorted by tick, skipping records where the field is missing or not finite. */
@@ -14,9 +14,14 @@ export function seriesOf(records: HistoryRecord[], field: keyof HistoryRecord): 
   return points.sort((a, b) => a[0] - b[0]);
 }
 
+/** Ticks at which events of one kind happened ("reseed", "switch", "extinct"). */
+export function eventTicks(records: HistoryRecord[], name: string): number[] {
+  return records.flatMap((r) => (r.events ?? []).filter((e) => e.event === name).map((e) => e.tick));
+}
+
 /** Ticks at which the run started fresh colonies after an extinction. */
 export function reseedTicks(records: HistoryRecord[]): number[] {
-  return records.flatMap((r) => (r.events ?? []).filter((e) => e.event === "reseed").map((e) => e.tick));
+  return eventTicks(records, "reseed");
 }
 
 /**
@@ -75,6 +80,8 @@ const CHARTS: { field: Field; title: string }[] = [
   { field: "members", title: "Members" },
   { field: "energy", title: "Total energy" },
   { field: "delivery_rate", title: "Food per member per tick" },
+  { field: "pred_error", title: "Prediction error" },
+  { field: "learning_rate", title: "Learning rate" },
 ];
 
 const HEIGHT = 92;
@@ -192,7 +199,8 @@ export class PopulationView {
     const plotW = this.plotWidth();
     const plotH = HEIGHT - PAD.top - PAD.bottom;
     const xOf = (tick: number) => PAD.left + (tick / maxTick) * plotW;
-    const reseeds = reseedTicks(this.current);
+    // vertical rules: a fresh start after extinction, or a switch being flipped
+    const reseeds = [...reseedTicks(this.current), ...eventTicks(this.current, "switch")];
     const empty = this.current.length === 0 && this.overlay.length === 0;
 
     CHARTS.forEach((chart, index) => {
