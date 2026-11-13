@@ -7,9 +7,10 @@ a surplus, splits when it gets large, and dies when it runs out.
 
 All three stages are built. Networks change in two ways: by mutation and
 two-parent crossover when a colony gains a member, and during life, as each
-member learns to predict its own next senses. Colonies belong to a few fixed
-**families** that mark territory, pay upkeep on foreign ground, and can
-evolve to strike members of other families. See
+member learns to predict its own next senses. A world starts with independent colonies that have 20,000 ticks
+to learn to forage. Then they are divided by region into six **families**
+that mark territory, pay upkeep on foreign ground, and can evolve to strike
+members of other families. See
 [the design](docs/superpowers/specs/2026-11-12-colony-life-sim-design.md).
 
 ## Setup
@@ -64,6 +65,7 @@ resumed run keeps the switches it was left with.
 | `--no-reseed` | off | When every colony has died, stop instead of starting fresh ones. |
 | `--no-learning` | off | Switch lifetime learning off, for a pure-evolution run. |
 | `--inherit learned\|birth` | learned | What offspring copy: what the parent learned, or what the parent was born with. |
+| `--seed-from RUN_DIR` | none | Found this run's colonies from the living members of an earlier run's latest checkpoint. The survivors are copied into the new run, so its fresh starts and resumes use them too. |
 | `--runs-dir DIR` | `runs` | Where runs are recorded. |
 | `--host`, `--port` | 127.0.0.1, 8765 | Where the viewer server listens. |
 

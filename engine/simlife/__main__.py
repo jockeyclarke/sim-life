@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 from .config import Config
-from .recorder import Recorder
+from .recorder import Recorder, load_survivors
 from .runner import Runner
 
 HEADLESS_CHUNK = 500
@@ -33,6 +33,8 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--inherit", choices=["learned", "birth"],
                      help="what offspring copy: the parent's learned weights (the default "
                           "for a new run) or the weights the parent was born with")
+    run.add_argument("--seed-from", type=Path, metavar="RUN_DIR",
+                     help="found this run's colonies from the survivors of an earlier run")
     run.add_argument("--host", default="127.0.0.1")
     run.add_argument("--port", type=int, default=8765)
     return parser
@@ -43,7 +45,12 @@ def make_runner(args: argparse.Namespace) -> Runner:
         runner = Runner.resume(args.resume)  # keeps the switches the run was left with
     else:
         cfg = Config()
-        runner = Runner(cfg, args.seed, Recorder(args.runs_dir, cfg, args.seed))
+        founders, seeded_from = None, None
+        if args.seed_from:
+            params, lr = load_survivors(args.seed_from, cfg)
+            founders, seeded_from = {"params": params, "lr": lr}, str(args.seed_from)
+        recorder = Recorder(args.runs_dir, cfg, args.seed, founders=founders, seeded_from=seeded_from)
+        runner = Runner(cfg, args.seed, recorder)
     if args.no_reseed:
         runner.reseed_on_extinction = False
     # A resumed run keeps its saved switches unless a flag says otherwise.

@@ -34,8 +34,9 @@ class Runner:
         self.cfg = cfg
         self.seed = seed
         self.recorder = recorder
-        self._fresh_world = jax.jit(lambda key: init_world(key, cfg))
-        self.state = state if state is not None else init_world(jax.random.key(seed), cfg)
+        founders = recorder.founders  # survivors this run is seeded from, or None
+        self._fresh_world = jax.jit(lambda key: init_world(key, cfg, founders))
+        self.state = state if state is not None else init_world(jax.random.key(seed), cfg, founders)
         self.reseed_on_extinction = True
         self.extinct = False
         self.extinctions = extinctions

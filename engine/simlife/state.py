@@ -96,7 +96,10 @@ def nearest_centre(points: Array, centres: Array) -> Array:
     return jnp.argmin((delta**2).sum(-1), axis=1).astype(jnp.int32)
 
 
-def init_world(key: Array, cfg: Config) -> WorldState:
+def init_world(key: Array, cfg: Config, founders: dict | None = None) -> WorldState:
+    """A new world. `founders`, if given, is a pool of networks from an earlier
+    run's survivors ({"params": arrays with a leading survivor axis, "lr": (S,)});
+    each founding colony then starts from one survivor drawn at random."""
     N, C, F, P = (
         cfg.capacity_members,
         cfg.capacity_colonies,
@@ -127,8 +130,14 @@ def init_world(key: Array, cfg: Config) -> WorldState:
     family_centre = jax.random.uniform(k_centre, (K, 2))
     col_family = nearest_centre(nest, family_centre)
 
-    founders = jax.vmap(lambda k: init_params(k, cfg))(jax.random.split(k_net, C))
-    params = jax.tree.map(lambda a: a[colony], founders)
+    if founders is None:
+        per_colony = jax.vmap(lambda k: init_params(k, cfg))(jax.random.split(k_net, C))
+        colony_lr = jnp.full(C, cfg.initial_lr)
+    else:
+        pick = jax.random.randint(k_net, (C,), 0, founders["lr"].shape[0])
+        per_colony = {k: jnp.asarray(v)[pick] for k, v in founders["params"].items()}
+        colony_lr = jnp.asarray(founders["lr"])[pick]
+    params = jax.tree.map(lambda a: a[colony], per_colony)
 
     lifespan = random_lifespan(k_life, (N,), cfg)
     # Stagger starting ages so a founding cohort doesn't all die on one tick.
@@ -151,7 +160,7 @@ def init_world(key: Array, cfg: Config) -> WorldState:
         generation=jnp.zeros(N, jnp.int32),
         params=params,
         birth_params=params,
-        lr=jnp.full(N, cfg.initial_lr),
+        lr=colony_lr[colony],
         prev_obs=jnp.zeros((N, cfg.n_inputs)),
         has_prev=jnp.zeros(N, bool),
         last_pred=jnp.zeros((N, cfg.n_predictions)),
