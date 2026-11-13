@@ -8,6 +8,7 @@ import jax
 import jax.numpy as jnp
 
 from .brain import act_all
+from .combat import strike
 from .config import Config
 from .learning import learn_phase
 from .lifecycle import age_and_die, grow, kill_dead_colonies, regrow_food, split
@@ -34,6 +35,7 @@ def step(state: WorldState, cfg: Config) -> WorldState:
     )
     state = move(state, turn, speed, cfg)
     state = pickup(state, cfg)
+    state = strike(state, cfg)
     state = deliver(state, cfg)
     state = metabolise(state, speed, cfg)
     state = update_territory(state, cfg)

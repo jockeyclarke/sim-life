@@ -69,8 +69,15 @@ def test_energy_ledger_balances_over_one_tick():
             income = cfg.food_energy * delivered - cfg.birth_cost * births
             change = float(s2.energy.sum() - s.energy.sum())
             spent = income - change
-            assert members * cfg.base_cost - 1e-3 <= spent
-            assert spent <= members * (cfg.base_cost + cfg.speed_cost) + 1e-3
+            # living costs, plus (stage 3) upkeep on foreign ground and strikes
+            colonies = int(s.col_alive.sum())
+            strikes = int((s2.strikes - s.strikes).sum())
+            most = (
+                members * (cfg.base_cost + cfg.speed_cost)
+                + colonies * cfg.upkeep_rate
+                + strikes * (cfg.strike_cost + cfg.strike_damage)
+            )
+            assert members * cfg.base_cost - 1e-3 <= spent <= most + 1e-3
             checked += 1
         s = s2
     assert checked > 100
