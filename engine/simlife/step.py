@@ -14,6 +14,7 @@ from .lifecycle import age_and_die, grow, kill_dead_colonies, regrow_food, split
 from .physics import deliver, metabolise, move, pickup
 from .senses import observe
 from .state import WorldState
+from .territory import update_territory
 
 
 def step(state: WorldState, cfg: Config) -> WorldState:
@@ -35,6 +36,7 @@ def step(state: WorldState, cfg: Config) -> WorldState:
     state = pickup(state, cfg)
     state = deliver(state, cfg)
     state = metabolise(state, speed, cfg)
+    state = update_territory(state, cfg)
     state = age_and_die(state, cfg)
     state = kill_dead_colonies(state)
     state = grow(state, cfg, k_grow)

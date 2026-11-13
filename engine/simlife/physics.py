@@ -9,6 +9,7 @@ from jax import Array
 from .config import Config
 from .senses import torus_distance, wrap01
 from .state import WorldState
+from .territory import home_share, scent_at
 
 
 def move(state: WorldState, turn: Array, speed: Array, cfg: Config) -> WorldState:
@@ -69,4 +70,8 @@ def metabolise(state: WorldState, speed: Array, cfg: Config) -> WorldState:
     spent = jax.ops.segment_sum(
         cost, state.colony, num_segments=cfg.capacity_colonies
     )
-    return state._replace(energy=state.energy - spent)
+    # Upkeep: a nest on ground another family dominates pays extra, more the
+    # more foreign the ground is. Unmarked ground counts as half foreign.
+    own, foreign = scent_at(state, state.nest, state.col_family, cfg)
+    upkeep = state.col_alive * cfg.upkeep_rate * (1 - home_share(own, foreign))
+    return state._replace(energy=state.energy - spent - upkeep)
