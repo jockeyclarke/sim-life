@@ -355,3 +355,14 @@ def test_children_mix_their_parents():
         signs = {u[1] for u in unit_signs(s2.params, the_child(s, s2))}
         mixed += signs == {1.0, -1.0}
     assert mixed >= 10  # A ≠ B about half the time, and then nearly every child mixes
+
+
+
+def test_deaths_during_the_grace_period_are_not_counted():
+    s = rich_and_poor()._replace(
+        energy=jnp.array([0.0, 0.0]), tick=jnp.int32(50), founded=jnp.int32(0),
+        col_born=jnp.array([10, 20]), col_foreign=jnp.array([False, True]),
+    )
+    assert kill_dead_colonies(s, grace_ticks=100).colonies_died.tolist() == [0, 0]
+    later = kill_dead_colonies(s._replace(tick=jnp.int32(150)), grace_ticks=100)
+    assert later.colonies_died.tolist() == [1, 1]

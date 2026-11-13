@@ -370,7 +370,8 @@ def takeovers(run_dir):
 
 
 def test_takeover_event_written_once(tmp_path):
-    r = Runner(families_cfg, 0, Recorder(tmp_path, families_cfg, 0))
+    c = _Config(capacity_members=256, capacity_colonies=24, capacity_food=64, grace_ticks=0)
+    r = Runner(c, 0, Recorder(tmp_path, c, 0))
     s = r.state
     others = s.col_alive & (s.col_family != 2)
     r.state = s._replace(col_alive=s.col_alive & ~others, alive=s.alive & ~others[s.colony])
@@ -411,3 +412,13 @@ def test_fresh_start_restarts_the_grace_period(tmp_path):
     r.advance(5)
     assert r.extinctions >= 1 and int(r.state.founded) > 0
     assert int(r.state.founded) <= int(r.state.tick)
+
+
+def test_no_takeover_is_logged_during_the_grace_period(tmp_path):
+    c = _Config(capacity_members=256, capacity_colonies=24, capacity_food=64, grace_ticks=300)
+    r = Runner(c, 0, Recorder(tmp_path, c, 0))
+    s = r.state
+    others = s.col_alive & (s.col_family != s.col_family[0])
+    r.state = s._replace(col_alive=s.col_alive & ~others, alive=s.alive & ~others[s.colony])
+    r.advance(200)
+    assert takeovers(r.recorder.run_dir) == []

@@ -20,7 +20,7 @@ class Config:
     patch_radius: float = 0.05
 
     # Starting conditions.
-    initial_colonies: int = 18  # founding nests: n_families families of initial_colonies / n_families
+    initial_colonies: int = 18
     initial_members: int = 12
     initial_energy: float = 60.0
 

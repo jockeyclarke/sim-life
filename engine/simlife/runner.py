@@ -127,10 +127,14 @@ class Runner:
                 tick = int(self.state.tick)
                 remaining -= tick - before
 
-                self._watch_takeover(written)
+                # Takeovers count only once families have formed: before that,
+                # regional labels are not families in contest.
                 formed = int(self.state.founded) + self.cfg.grace_ticks
                 if before < formed <= tick:
                     written.append(self.recorder.event({"event": "families_formed", "tick": formed}))
+                    self._families_alive = self._count_families()
+                elif tick >= formed:
+                    self._watch_takeover(written)
                 if tick > before and tick % self.record_interval == 0:
                     written.append(self.recorder.record(compute_metrics(self.state)))
                 interval = self.checkpoint_interval

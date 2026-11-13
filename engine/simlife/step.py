@@ -21,7 +21,6 @@ from .territory import update_territory
 def step(state: WorldState, cfg: Config) -> WorldState:
     """Advance the world by one tick. The order of the phases is fixed."""
     key, k_grow, k_split, k_food = jax.random.split(state.key, 4)
-    state = form_families(state, cfg)  # only acts on the tick the grace period ends
 
     obs = observe(state, cfg)  # (N, 10)
     state = learn_phase(state, obs, cfg)  # score and correct last tick's predictions
@@ -41,11 +40,12 @@ def step(state: WorldState, cfg: Config) -> WorldState:
     state = metabolise(state, speed, cfg)
     state = update_territory(state, cfg)
     state = age_and_die(state, cfg)
-    state = kill_dead_colonies(state)
+    state = kill_dead_colonies(state, cfg.grace_ticks)
     state = grow(state, cfg, k_grow)
     state = split(state, cfg, k_split)
     state = regrow_food(state, cfg, k_food)
-    return state._replace(tick=state.tick + 1)
+    state = state._replace(tick=state.tick + 1)
+    return form_families(state, cfg)  # acts only when this step reaches the end of grace
 
 
 @partial(jax.jit, static_argnames=("cfg",))

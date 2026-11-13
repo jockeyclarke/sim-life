@@ -139,3 +139,22 @@ def test_grace_is_counted_from_when_the_world_was_founded():
     assert jnp.isclose(metabolise(foreign, no_speed, c).energy[0], 10.0 - c.base_cost)
     assert jnp.isclose(metabolise(foreign._replace(tick=jnp.int32(1100)), no_speed, c).energy[0],
                        10.0 - c.base_cost - c.upkeep_rate)
+
+
+def test_families_are_formed_in_the_record_of_the_grace_tick():
+    from simlife.step import step
+    c = Config(capacity_members=256, capacity_colonies=16, capacity_food=64, initial_colonies=8,
+               grace_ticks=50)
+    s = init_world(jax.random.key(2), c)
+    s = s._replace(col_family=(s.col_family + 1) % c.n_families, tick=jnp.int32(49))
+    s2 = jax.jit(lambda s: step(s, c))(s)  # the step that produces tick 50
+    d = torus_distance(s2.nest[:, None, :], s2.family_centre[None, :, :])
+    assert int(s2.tick) == 50 and bool((s2.col_family == jnp.argmin(d, axis=1)).all())
+
+
+def test_formation_clears_founded_on_foreign_ground():
+    c = Config(capacity_members=256, capacity_colonies=16, capacity_food=64, initial_colonies=8,
+               grace_ticks=50)
+    s = init_world(jax.random.key(2), c)
+    s = s._replace(col_foreign=jnp.ones_like(s.col_foreign), tick=jnp.int32(50))
+    assert not bool(form_families(s, c).col_foreign.any())

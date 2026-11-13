@@ -111,9 +111,12 @@ These would make the project a failure even if it runs:
   friends; members of different families are foes.
 - **Families form from a foraging world** (Paul's choice, after tuning showed
   random founding families rarely include a viable forager). A world starts
-  as in stages 1 and 2: independent colonies, each with its own random
+  as in stages 1 and 2: separate colonies, each with its own random
   network, nests scattered. During the grace period nothing competes, and
-  colonies evolve to forage. When it ends, every living colony joins the
+  colonies evolve to forage. Colonies do carry provisional regional family
+  labels then, so their territory senses and the viewer's family colours
+  already work, but no upkeep or strike happens and no takeover is
+  recorded. **(call)** When it ends, every living colony joins the
   family of the nearest of six regional centres drawn when the world was
   founded, and territory scent is cleared so the contest starts fresh.
   From then on daughters inherit their parent's family. With a grace period

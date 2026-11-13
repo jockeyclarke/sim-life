@@ -25,7 +25,7 @@ def age_and_die(state: WorldState, cfg: Config) -> WorldState:
     return state._replace(age=age, alive=alive, carrying=state.carrying & alive)
 
 
-def kill_dead_colonies(state: WorldState) -> WorldState:
+def kill_dead_colonies(state: WorldState, grace_ticks: int = 0) -> WorldState:
     """A colony out of energy, or out of members, dies with everyone in it."""
     C = state.col_alive.shape[0]
     counts = jax.ops.segment_sum(
@@ -34,8 +34,11 @@ def kill_dead_colonies(state: WorldState) -> WorldState:
     col_alive = state.col_alive & (state.energy > 0) & (counts > 0)
     alive = state.alive & col_alive[state.colony]
 
-    # Record each death by where the colony was founded: at home or on foreign ground.
-    died = state.col_alive & ~col_alive
+    # Record each death by where the colony was founded: at home or on foreign
+    # ground. Only once the contest has begun: grace-period deaths say nothing
+    # about intruders.
+    competing = state.tick >= state.founded + grace_ticks
+    died = state.col_alive & ~col_alive & competing
     ground = state.col_foreign.astype(jnp.int32)
     life = jnp.where(died, state.tick - state.col_born, 0)
     return state._replace(
@@ -220,4 +223,6 @@ def form_families(state: WorldState, cfg: Config) -> WorldState:
     return state._replace(
         col_family=jnp.where(now, nearest_centre(state.nest, state.family_centre), state.col_family),
         territory=jnp.where(now, 0.0, state.territory),
+        # everyone is now at home in their own family's region
+        col_foreign=jnp.where(now, False, state.col_foreign),
     )
