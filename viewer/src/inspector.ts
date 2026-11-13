@@ -3,18 +3,19 @@
 import { divergingColor, drawHeatmap } from "./heatmap";
 import type { DeadInspection, Inspection, Snapshot } from "./protocol";
 import { cssVar, fitCanvas } from "./theme";
-import { colonyColor } from "./worldView";
+import { familyColor } from "./families";
 
 // In protocol order. See engine/simlife/senses.py (observe) and brain.py (act).
 export const INPUT_NAMES = [
   "food left", "food right", "nest left", "nest right", "crowd", "heard",
+  "territory left", "territory right", "foreigners",
   "carrying", "energy", "memory 0", "memory 1",
 ];
-export const ACTION_NAMES = ["turn", "speed", "signal", "memory 0", "memory 1"];
-export const PREDICTED_NAMES = INPUT_NAMES.slice(0, 6);
+export const ACTION_NAMES = ["turn", "speed", "signal", "memory 0", "memory 1", "aggression"];
+export const PREDICTED_NAMES = INPUT_NAMES.slice(0, 9);
 
-const INPUT_CODES = ["fL", "fR", "nL", "nR", "cr", "sh", "ca", "en", "m0", "m1"];
-const ACTION_CODES = ["turn", "spd", "sig", "m0", "m1"];
+const INPUT_CODES = ["fL", "fR", "nL", "nR", "cr", "sh", "tL", "tR", "fo", "ca", "en", "m0", "m1"];
+const ACTION_CODES = ["turn", "spd", "sig", "m0", "m1", "agg"];
 const HIDDEN_CODES = Array.from({ length: 8 }, (_, i) => `h${i}`);
 
 /** The selected member's prediction error over time, as seen by this page since selection. */
@@ -44,6 +45,16 @@ export class ErrorTrace {
     this.slot = null;
     this.data = [];
   }
+}
+
+/** The family of the selected member, from the snapshot's member arrays; null if unknown. */
+export function familyOf(snap: Snapshot): number | null {
+  const slot = snap.inspect?.slot;
+  const slots = snap.arrays.member_slot;
+  const families = snap.arrays.member_family;
+  if (slot === undefined || !slots || !families) return null;
+  const i = slots.indexOf(slot);
+  return i >= 0 ? families[i]! : null;
 }
 
 /**
@@ -166,7 +177,7 @@ export class Inspector {
     this.matrices = [
       matrix("w1", "Senses → hidden · trained during life", HIDDEN_CODES, INPUT_CODES,
         (r, c) => `${INPUT_NAMES[c]} → hidden ${r}`),
-      matrix("w3", "Hidden → predictions · trained during life", INPUT_CODES.slice(0, 6), HIDDEN_CODES,
+      matrix("w3", "Hidden → predictions · trained during life", INPUT_CODES.slice(0, 9), HIDDEN_CODES,
         (r, c) => `hidden ${c} → predicted ${PREDICTED_NAMES[r]}`),
       matrix("w2", "Hidden → actions · changes only at division", ACTION_CODES, HIDDEN_CODES,
         (r, c) => `hidden ${c} → ${ACTION_NAMES[r]}`),
@@ -200,15 +211,22 @@ export class Inspector {
     this.show(null, "click a member in the world to inspect it");
   }
 
+  /** The selected member's family, looked up from the snapshot's arrays. */
+  private family: number | null = null;
+
   update(snap: Snapshot): void {
     const inspect = snap.inspect;
+    // a dead member is no longer in the arrays: keep the family last seen
+    const family = familyOf(snap);
     if (selectionChanged(this.selection, inspect)) {
       // a different member, or none: nothing from the previous one carries over
       this.selection = inspect?.selection ?? null;
+      this.family = null;
       this.trace.clear();
       this.baseline = null;
       this.last = null;
     }
+    if (family !== null) this.family = family;
     if (inspect === null) {
       this.show(null, "click a member in the world to inspect it");
       return;
@@ -232,9 +250,10 @@ export class Inspector {
     const dark = isDark();
 
     const swatch = el("span", { className: "colony" });
-    swatch.style.background = colonyColor(inspect.colony);
+    const family = this.family;
+    swatch.style.background = family === null ? "transparent" : familyColor(family, dark);
     this.who.replaceChildren(
-      `member ${inspect.slot} · `, swatch, ` colony ${inspect.colony} · age ${inspect.age.toLocaleString("en-US")} of ${inspect.lifespan.toLocaleString("en-US")}`,
+      `member ${inspect.slot} · `, swatch, ` family ${family ?? "?"} · colony ${inspect.colony} · age ${inspect.age.toLocaleString("en-US")} of ${inspect.lifespan.toLocaleString("en-US")}`,
       el("br"),
       `generation ${inspect.generation} · learning rate ${inspect.learning_rate.toFixed(4)} · ${inspect.carrying ? "carrying food" : "not carrying"}`,
     );

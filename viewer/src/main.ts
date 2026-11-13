@@ -15,7 +15,8 @@ const url = `ws://${location.hostname || "127.0.0.1"}:${port}`;
 
 let latest: Snapshot | null = null;
 let drawn: Snapshot | null = null;
-let mode: ColorMode = "colony";
+let mode: ColorMode = "family";
+let shadeTerritory = true;
 let currentRun = "";
 let overlayRun: string | null = null;
 
@@ -26,6 +27,10 @@ const controls = mountControls(document.querySelector<HTMLElement>("#controls")!
   onColorMode(next) {
     mode = next;
     drawn = null; // force a redraw even while paused
+  },
+  onShadeTerritory(on) {
+    shadeTerritory = on;
+    drawn = null;
   },
   onOverlay(runId) {
     overlayRun = runId;
@@ -84,7 +89,7 @@ function frame(): void {
       accent: cssVar("--accent"),
       text: cssVar("--text"),
       dark: matchMedia("(prefers-color-scheme: dark)").matches,
-    });
+    }, shadeTerritory);
     drawn = latest;
     lastSize = size;
   }
