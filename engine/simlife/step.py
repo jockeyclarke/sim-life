@@ -40,12 +40,11 @@ def step(state: WorldState, cfg: Config) -> WorldState:
     return state._replace(tick=state.tick + 1)
 
 
-@partial(jax.jit, static_argnames=("cfg", "n"))
+@partial(jax.jit, static_argnames=("cfg",))
 def run_ticks(state: WorldState, cfg: Config, n: int) -> WorldState:
-    """n ticks compiled into one call. cfg and n are compile-time constants."""
+    """n ticks in one compiled call.
 
-    def body(s: WorldState, _):
-        return step(s, cfg), None
-
-    final, _ = jax.lax.scan(body, state, None, length=n)
-    return final
+    cfg is a compile-time constant (changing it recompiles). n is an ordinary
+    runtime value, so any chunk size reuses the same compiled loop.
+    """
+    return jax.lax.fori_loop(0, n, lambda _, s: step(s, cfg), state)
