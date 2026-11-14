@@ -117,6 +117,7 @@ is two steps:
   carriers, each leaving a fading trail, with everyone else as a faint dot,
   so you can watch food flow from the field into the nests.
 - **Inspector.** Click a member to select it; click empty space to clear.
+  Its home nest gets a bold ring, with a faint dashed line from the member.
   The panel shows what it senses, its hidden activations and actions this
   tick, its last prediction against what happened, its prediction error
   since you selected it, and its weights. "Show change since selected"
