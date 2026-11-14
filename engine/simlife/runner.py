@@ -34,8 +34,9 @@ class Runner:
         self.cfg = cfg
         self.seed = seed
         self.recorder = recorder
-        self._fresh_world = jax.jit(lambda key: init_world(key, cfg))
-        self.state = state if state is not None else init_world(jax.random.key(seed), cfg)
+        founders = recorder.founders  # survivors this run is seeded from, or None
+        self._fresh_world = jax.jit(lambda key: init_world(key, cfg, founders))
+        self.state = state if state is not None else init_world(jax.random.key(seed), cfg, founders)
         self.reseed_on_extinction = True
         self.extinct = False
         self.extinctions = extinctions
@@ -43,6 +44,7 @@ class Runner:
         # advance() may run in a worker thread while a viewer flips a switch;
         # the lock keeps a switch from being overwritten by a piece in flight.
         self._lock = threading.Lock()
+        self._families_alive = self._count_families()
 
     @classmethod
     def resume(cls, run_dir: Path) -> "Runner":
@@ -52,6 +54,20 @@ class Runner:
         runner.reseed_on_extinction = r.reseed_on_extinction
         runner.extinct = r.extinct
         return runner
+
+    def _count_families(self) -> int:
+        s = self.state
+        return len(set(s.col_family[s.col_alive].tolist()))
+
+    def _watch_takeover(self, written: list[dict]) -> None:
+        """Record, once, the moment a single family is left holding the field."""
+        now = self._count_families()
+        if now == 1 and self._families_alive > 1:
+            family = int(self.state.col_family[self.state.col_alive][0])
+            written.append(self.recorder.event(
+                {"event": "takeover", "family": family, "tick": int(self.state.tick)}
+            ))
+        self._families_alive = now
 
     def status(self) -> dict:
         return {
@@ -111,6 +127,14 @@ class Runner:
                 tick = int(self.state.tick)
                 remaining -= tick - before
 
+                # Takeovers count only once families have formed: before that,
+                # regional labels are not families in contest.
+                formed = int(self.state.founded) + self.cfg.grace_ticks
+                if before < formed <= tick:
+                    written.append(self.recorder.event({"event": "families_formed", "tick": formed}))
+                    self._families_alive = self._count_families()
+                elif tick >= formed:
+                    self._watch_takeover(written)
                 if tick > before and tick % self.record_interval == 0:
                     written.append(self.recorder.record(compute_metrics(self.state)))
                 interval = self.checkpoint_interval
@@ -140,7 +164,17 @@ class Runner:
                 # a fresh start is a new population, not a new experiment
                 learning_on=self.state.learning_on,
                 inherit_learned=self.state.inherit_learned,
+                # the run's cumulative counts go on
+                strikes=self.state.strikes,
+                colonies_died=self.state.colonies_died,
+                colony_life_total=self.state.colony_life_total,
             )
+            fresh = self.state
+            self.state = fresh._replace(
+                col_born=jnp.where(fresh.col_alive, fresh.tick, 0),
+                founded=fresh.tick,  # a new world: its own grace period
+            )
+            self._families_alive = self._count_families()
             self.extinct = False
             written.append(self.recorder.event({"event": "reseed", "tick": tick}))
             return True

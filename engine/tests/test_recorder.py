@@ -19,7 +19,9 @@ cfg = Config(
 
 def test_metrics_are_plain_numbers():
     m = compute_metrics(init_world(jax.random.key(0), cfg))
-    assert m == {
+    stage_1_and_2 = {k: v for k, v in m.items() if not k.startswith(("famil", "strikes", "colon"))
+                     or k == "colonies"}
+    assert stage_1_and_2 == {
         "tick": 0, "colonies": 4, "members": 48,
         "energy": pytest.approx(4 * cfg.initial_energy),
         "delivered": 0, "max_generation": 0,
@@ -169,3 +171,58 @@ def test_metrics_of_an_extinct_world_do_not_divide_by_zero():
     s = s._replace(alive=jnp.zeros_like(s.alive), col_alive=jnp.zeros_like(s.col_alive))
     m = compute_metrics(s)
     assert m["pred_error"] == 0.0 and m["learning_rate"] == 0.0 and m["members"] == 0
+
+
+# --- stage 3 -------------------------------------------------------------------
+
+
+def test_family_metrics_are_json_ready_and_sized_by_family():
+    c = Config()
+    s = run_ticks(init_world(jax.random.key(0), c), c, 50)
+    m = compute_metrics(s)
+    import json as _json
+    _json.dumps(m)
+    assert m["families"] == 6
+    for key in ("family_members", "family_colonies", "family_territory",
+                "family_aggression_mean", "family_aggression_sd"):
+        assert len(m[key]) == 6, key
+    assert sum(m["family_members"]) == m["members"] and sum(m["family_colonies"]) == m["colonies"]
+    assert 0 < sum(m["family_territory"]) <= 1.0 + 1e-6
+    assert all(0 <= a <= 1 for a in m["family_aggression_mean"])
+    assert all(sd >= 0 for sd in m["family_aggression_sd"])
+    for key in ("strikes_own_total", "strikes_foreign_total", "strikes_border_total",
+                "colonies_died_home", "colonies_died_foreign"):
+        assert isinstance(m[key], int), key
+    assert m["colony_life_home"] >= 0 and m["colony_life_foreign"] >= 0
+
+
+def test_dead_family_reads_zero():
+    import jax.numpy as jnp
+    c = Config()
+    s = init_world(jax.random.key(0), c)
+    gone = s.col_alive & (s.col_family == 2)
+    s = s._replace(col_alive=s.col_alive & ~gone, alive=s.alive & ~gone[s.colony])
+    m = compute_metrics(s)
+    assert m["families"] == 5
+    assert m["family_members"][2] == 0 and m["family_colonies"][2] == 0
+    assert m["family_aggression_mean"][2] == 0.0 and m["family_aggression_sd"][2] == 0.0
+
+
+def test_colony_lifespans_are_means_by_founding_ground():
+    import jax.numpy as jnp
+    s = init_world(jax.random.key(0), cfg)._replace(
+        colonies_died=jnp.array([2, 1], jnp.int32), colony_life_total=jnp.array([600, 50], jnp.int32)
+    )
+    m = compute_metrics(s)
+    assert m["colonies_died_home"] == 2 and m["colony_life_home"] == 300.0
+    assert m["colonies_died_foreign"] == 1 and m["colony_life_foreign"] == 50.0
+
+
+def test_strikes_are_recorded_per_interval_and_survive_resume(tmp_path):
+    rec = Recorder(tmp_path, cfg, seed=0)
+    base = {"colonies": 1, "members": 1, "energy": 1.0, "delivered": 0, "max_generation": 0}
+    first = rec.record({**base, "tick": 100, "strikes_own_total": 3, "strikes_foreign_total": 1, "strikes_border_total": 0})
+    assert (first["strikes_own"], first["strikes_foreign"], first["strikes_border"]) == (3, 1, 0)
+    again = Recorder(tmp_path, cfg, 0, _existing=rec.run_dir)  # as on resume
+    second = again.record({**base, "tick": 200, "strikes_own_total": 10, "strikes_foreign_total": 1, "strikes_border_total": 4})
+    assert (second["strikes_own"], second["strikes_foreign"], second["strikes_border"]) == (7, 0, 4)

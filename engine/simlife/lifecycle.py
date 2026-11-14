@@ -8,7 +8,8 @@ from jax import Array
 
 from .config import Config
 from .senses import wrap01
-from .state import WorldState, patch_positions, random_lifespan
+from .state import WorldState, nearest_centre, patch_positions, random_lifespan
+from .territory import home_share, scent_at
 
 
 def member_counts(state: WorldState, cfg: Config) -> Array:
@@ -24,7 +25,7 @@ def age_and_die(state: WorldState, cfg: Config) -> WorldState:
     return state._replace(age=age, alive=alive, carrying=state.carrying & alive)
 
 
-def kill_dead_colonies(state: WorldState) -> WorldState:
+def kill_dead_colonies(state: WorldState, grace_ticks: int = 0) -> WorldState:
     """A colony out of energy, or out of members, dies with everyone in it."""
     C = state.col_alive.shape[0]
     counts = jax.ops.segment_sum(
@@ -32,24 +33,35 @@ def kill_dead_colonies(state: WorldState) -> WorldState:
     )
     col_alive = state.col_alive & (state.energy > 0) & (counts > 0)
     alive = state.alive & col_alive[state.colony]
+
+    # Record each death by where the colony was founded: at home or on foreign
+    # ground. Only once the contest has begun: grace-period deaths say nothing
+    # about intruders.
+    competing = state.tick >= state.founded + grace_ticks
+    died = state.col_alive & ~col_alive & competing
+    ground = state.col_foreign.astype(jnp.int32)
+    life = jnp.where(died, state.tick - state.col_born, 0)
     return state._replace(
         col_alive=col_alive,
         energy=jnp.where(col_alive, state.energy, 0.0),
         alive=alive,
+        colonies_died=state.colonies_died + jax.ops.segment_sum(died.astype(jnp.int32), ground, 2),
+        colony_life_total=state.colony_life_total + jax.ops.segment_sum(life, ground, 2),
         carrying=state.carrying & alive,
     )
 
 
 def grow(state: WorldState, cfg: Config, key: Array) -> WorldState:
-    """At most one birth per colony: a random member divides, with mutation.
+    """At most one birth per colony, from two random parents in that colony.
 
-    The child is a copy of the parent's network plus small noise. This is the
-    only place the action weights ever change, and nothing here judges the parent:
-    it is chosen uniformly at random. Selection happens only because colonies
-    that gather more energy divide more and starve less.
+    Each hidden unit, with all its connections in and out, comes whole from
+    one parent or the other; then every weight gets small noise. This is the
+    only place the action weights ever change, and nothing here judges the
+    parents: they are chosen uniformly at random. Selection happens only
+    because colonies that gather more energy divide more and starve less.
     """
     N, C = cfg.capacity_members, cfg.capacity_colonies
-    k_parent, k_mutate, k_heading, k_life, k_lr = jax.random.split(key, 5)
+    k_parent, k_other, k_mutate, k_heading, k_life, k_lr, k_cross = jax.random.split(key, 7)
 
     counts = member_counts(state, cfg)
     surplus = state.energy > cfg.birth_cost + cfg.reserve_per_member * counts
@@ -65,10 +77,15 @@ def grow(state: WorldState, cfg: Config, key: Array) -> WorldState:
     ok = want & (rank < n_free)
     slot = jnp.where(ok, free[jnp.clip(rank, 0, N - 1)], N)
 
-    # One uniformly random living member of each colony.
-    score = jax.random.uniform(k_parent, (N,))
+    # Two uniformly random living members of each colony, drawn independently
+    # (a colony of one gets the same member twice).
     mine = state.alive[None, :] & (state.colony[None, :] == jnp.arange(C)[:, None])
-    parent = jnp.argmax(jnp.where(mine, score[None, :], -1.0), axis=1)  # (C,)
+
+    def pick(k: Array) -> Array:
+        score = jax.random.uniform(k, (N,))
+        return jnp.argmax(jnp.where(mine, score[None, :], -1.0), axis=1)  # (C,)
+
+    parent, other = pick(k_parent), pick(k_other)
 
     def put(field: Array, value: Array) -> Array:
         return field.at[slot].set(value, mode="drop")
@@ -77,15 +94,31 @@ def grow(state: WorldState, cfg: Config, key: Array) -> WorldState:
     # they are now (including what it learned in life), or as they were at its
     # own birth (learning discarded). Either way the child gets small noise on
     # top, and those become the child's own birth weights.
+    def source(name: str, who: Array) -> Array:
+        return jnp.where(
+            state.inherit_learned, state.params[name][who], state.birth_params[name][who]
+        )
+
+    # Crossover by whole hidden unit: for unit h the child takes row h of w1,
+    # entry h of b1, and column h of w2 and w3 from the same parent. Output
+    # biases are picked one by one. Nothing is ever averaged.
+    k_units, k_b2, k_b3 = jax.random.split(k_cross, 3)
+    from_a = jax.random.bernoulli(k_units, 0.5, (C, cfg.n_hidden))
+    choose = {
+        "w1": from_a[:, :, None],
+        "b1": from_a,
+        "w2": from_a[:, None, :],
+        "w3": from_a[:, None, :],
+        "b2": jax.random.bernoulli(k_b2, 0.5, (C, cfg.n_actions)),
+        "b3": jax.random.bernoulli(k_b3, 0.5, (C, cfg.n_predictions)),
+    }
     names = sorted(state.params)
     noise_keys = dict(zip(names, jax.random.split(k_mutate, len(names))))
     child = {}
     for name in names:
-        source = jnp.where(
-            state.inherit_learned, state.params[name][parent], state.birth_params[name][parent]
-        )
-        noise = jax.random.normal(noise_keys[name], source.shape)
-        child[name] = source + cfg.mutation_sigma * noise
+        mixed = jnp.where(choose[name], source(name, parent), source(name, other))
+        noise = jax.random.normal(noise_keys[name], mixed.shape)
+        child[name] = mixed + cfg.mutation_sigma * noise
 
     # The learning rate is inherited too, nudged up or down by a few percent,
     # so evolution can turn learning up or down, or off.
@@ -104,7 +137,9 @@ def grow(state: WorldState, cfg: Config, key: Array) -> WorldState:
         lifespan=put(state.lifespan, random_lifespan(k_life, (C,), cfg)),
         memory=put(state.memory, jnp.zeros((C, 2))),
         signal=put(state.signal, jnp.zeros(C)),
-        generation=put(state.generation, state.generation[parent] + 1),
+        generation=put(
+            state.generation, jnp.maximum(state.generation[parent], state.generation[other]) + 1
+        ),
         params={name: put(state.params[name], child[name]) for name in names},
         birth_params={name: put(state.birth_params[name], child[name]) for name in names},
         lr=put(state.lr, child_lr),
@@ -147,9 +182,16 @@ def split(state: WorldState, cfg: Config, key: Array) -> WorldState:
         return jnp.where(do, field.at[daughter].set(value), field)
 
     energy = on_daughter(state.energy.at[parent].set(half), half)
+    new_nest = wrap01(state.nest[parent] + offset)
+    family = state.col_family[parent]
+    own, foreign = scent_at(state, new_nest[None, :], family[None], cfg)
+    founded_foreign = home_share(own, foreign)[0] < 0.5
     return state._replace(
         colony=jnp.where(moving, daughter, state.colony).astype(jnp.int32),
-        nest=on_daughter(state.nest, wrap01(state.nest[parent] + offset)),
+        nest=on_daughter(state.nest, new_nest),
+        col_family=on_daughter(state.col_family, family),
+        col_born=on_daughter(state.col_born, state.tick),
+        col_foreign=on_daughter(state.col_foreign, founded_foreign),
         energy=jnp.where(do, energy, state.energy),
         col_alive=on_daughter(state.col_alive, True),
         col_generation=on_daughter(
@@ -167,4 +209,20 @@ def regrow_food(state: WorldState, cfg: Config, key: Array) -> WorldState:
     return state._replace(
         food_pos=jnp.where(revive[:, None], fresh, state.food_pos),
         food_alive=state.food_alive | revive,
+    )
+
+
+def form_families(state: WorldState, cfg: Config) -> WorldState:
+    """On the tick the grace period ends, divide the world into families by region.
+
+    Every colony joins the family of its nest's nearest regional centre, and
+    the territory scent is cleared so the contest starts fresh. On any other
+    tick nothing changes.
+    """
+    now = state.tick == state.founded + cfg.grace_ticks
+    return state._replace(
+        col_family=jnp.where(now, nearest_centre(state.nest, state.family_centre), state.col_family),
+        territory=jnp.where(now, 0.0, state.territory),
+        # everyone is now at home in their own family's region
+        col_foreign=jnp.where(now, False, state.col_foreign),
     )

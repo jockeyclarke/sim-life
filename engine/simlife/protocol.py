@@ -18,6 +18,7 @@ import struct
 import numpy as np
 
 from .state import WorldState
+from .territory import owner_grid
 
 MAX_TICKS_PER_FRAME = 1000
 
@@ -31,6 +32,7 @@ def encode_snapshot(
     food_alive = np.asarray(state.food_alive)
     colony = np.asarray(state.colony)
     members = np.bincount(colony[alive], minlength=col_alive.shape[0])
+    owner, strength = owner_grid(state, _Grid(state.territory.shape[1]))
 
     arrays = [
         ("member_pos", np.asarray(state.pos)[alive]),
@@ -39,11 +41,17 @@ def encode_snapshot(
         ("member_carrying", np.asarray(state.carrying)[alive]),
         ("member_slot", np.flatnonzero(alive)),
         ("member_error", np.asarray(state.pred_error_avg)[alive]),
+        ("member_family", np.asarray(state.col_family)[colony][alive]),
+        ("member_aggression", np.asarray(state.aggression)[alive]),
         ("colony_slot", np.flatnonzero(col_alive)),
         ("colony_nest", np.asarray(state.nest)[col_alive]),
         ("colony_energy", np.asarray(state.energy)[col_alive]),
         ("colony_members", members[col_alive]),
+        ("colony_family", np.asarray(state.col_family)[col_alive]),
         ("food_pos", np.asarray(state.food_pos)[food_alive]),
+        ("strike_pos", np.asarray(state.pos)[np.asarray(state.striking) & alive]),
+        ("territory_owner", np.asarray(owner)),  # family per cell, or -1 where unmarked
+        ("territory_strength", np.asarray(strength)),  # that family's share of the scent
     ]
     header = {
         "type": "snapshot",
@@ -51,11 +59,17 @@ def encode_snapshot(
         "metrics": metrics,
         "status": status,
         "inspect": inspect,
+        "n_families": int(state.territory.shape[0]),
         "arrays": [{"name": name, "shape": list(a.shape)} for name, a in arrays],
     }
     head = json.dumps(header).encode()
     body = b"".join(a.astype("<f4").tobytes() for _, a in arrays)
     return struct.pack("<I", len(head)) + head + body
+
+
+class _Grid:
+    def __init__(self, g: int):
+        self.territory_grid = g
 
 
 def decode_snapshot(data: bytes) -> tuple[dict, dict[str, np.ndarray]]:

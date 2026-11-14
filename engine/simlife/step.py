@@ -8,12 +8,14 @@ import jax
 import jax.numpy as jnp
 
 from .brain import act_all
+from .combat import strike
 from .config import Config
 from .learning import learn_phase
-from .lifecycle import age_and_die, grow, kill_dead_colonies, regrow_food, split
+from .lifecycle import form_families, age_and_die, grow, kill_dead_colonies, regrow_food, split
 from .physics import deliver, metabolise, move, pickup
 from .senses import observe
 from .state import WorldState
+from .territory import update_territory
 
 
 def step(state: WorldState, cfg: Config) -> WorldState:
@@ -22,24 +24,28 @@ def step(state: WorldState, cfg: Config) -> WorldState:
 
     obs = observe(state, cfg)  # (N, 10)
     state = learn_phase(state, obs, cfg)  # score and correct last tick's predictions
-    turn, speed, signal, memory = act_all(state.params, obs)  # every network at once
+    turn, speed, signal, memory, aggression = act_all(state.params, obs)  # every network at once
 
     alive = state.alive
     state = state._replace(
         key=key,
         signal=jnp.where(alive, signal, 0.0),
         memory=jnp.where(alive[:, None], memory, 0.0),
+        aggression=jnp.where(alive, aggression, 0.0),
     )
     state = move(state, turn, speed, cfg)
     state = pickup(state, cfg)
+    state = strike(state, cfg)
     state = deliver(state, cfg)
     state = metabolise(state, speed, cfg)
+    state = update_territory(state, cfg)
     state = age_and_die(state, cfg)
-    state = kill_dead_colonies(state)
+    state = kill_dead_colonies(state, cfg.grace_ticks)
     state = grow(state, cfg, k_grow)
     state = split(state, cfg, k_split)
     state = regrow_food(state, cfg, k_food)
-    return state._replace(tick=state.tick + 1)
+    state = state._replace(tick=state.tick + 1)
+    return form_families(state, cfg)  # acts only when this step reaches the end of grace
 
 
 @partial(jax.jit, static_argnames=("cfg",))

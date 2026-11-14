@@ -34,6 +34,8 @@ def blank(cfg: Config, seed: int = 0) -> WorldState:
         nest=nest,
         energy=jnp.full(C, 10.0),
         col_alive=jnp.ones(C, bool),
+        # hand-built worlds use a fixed rule, not regions: colony c is family c % n_families
+        col_family=(jnp.arange(C) % cfg.n_families).astype(jnp.int32),
         patch_pos=jnp.full_like(s.patch_pos, 0.5),
     )
 

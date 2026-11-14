@@ -4,6 +4,7 @@ import { Inspector } from "./inspector";
 import { PopulationView } from "./populationView";
 import type { Snapshot } from "./protocol";
 import { cssVar, fitCanvas } from "./theme";
+import { TrailLayer } from "./trails";
 import { type ColorMode, drawWorld, pickMember } from "./worldView";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#world")!;
@@ -15,17 +16,24 @@ const url = `ws://${location.hostname || "127.0.0.1"}:${port}`;
 
 let latest: Snapshot | null = null;
 let drawn: Snapshot | null = null;
-let mode: ColorMode = "colony";
+let mode: ColorMode = "family";
+let shadeTerritory = true;
 let currentRun = "";
 let overlayRun: string | null = null;
+const trails = new TrailLayer();
 
 const inspector = new Inspector(document.querySelector<HTMLElement>("#inspector")!);
 const population = new PopulationView(document.querySelector<HTMLElement>("#population")!);
 
 const controls = mountControls(document.querySelector<HTMLElement>("#controls")!, (m) => connection.send(m), {
   onColorMode(next) {
+    if (next === "food" && mode !== "food") trails.clear();
     mode = next;
     drawn = null; // force a redraw even while paused
+  },
+  onShadeTerritory(on) {
+    shadeTerritory = on;
+    drawn = null;
   },
   onOverlay(runId) {
     overlayRun = runId;
@@ -77,6 +85,8 @@ function frame(): void {
   const size = canvas.clientWidth;
   if (latest && (latest !== drawn || size !== lastSize)) {
     const ctx = fitCanvas(canvas, size, size);
+    // trails advance once per new snapshot, so they fade with simulated time, not screen refreshes
+    if (mode === "food" && latest !== drawn) trails.add(latest, canvas.width, canvas.height, cssVar("--accent"));
     drawWorld(ctx, latest, size, mode, {
       background: cssVar("--world"),
       food: cssVar("--food"),
@@ -84,7 +94,7 @@ function frame(): void {
       accent: cssVar("--accent"),
       text: cssVar("--text"),
       dark: matchMedia("(prefers-color-scheme: dark)").matches,
-    });
+    }, shadeTerritory, trails.canvas);
     drawn = latest;
     lastSize = size;
   }

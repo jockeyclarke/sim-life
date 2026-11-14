@@ -8,6 +8,7 @@ from jax import Array
 
 from .config import Config
 from .state import WorldState
+from .territory import scent_at
 
 
 def wrap_delta(a: Array, b: Array) -> Array:
@@ -75,14 +76,39 @@ def neighbour_stats(state: WorldState, cfg: Config) -> tuple[Array, Array]:
     return crowd, heard
 
 
-def observe(state: WorldState, cfg: Config) -> Array:
-    """The (N, 10) input matrix. Column order is fixed:
+def foreign_nearby(state: WorldState, cfg: Config) -> Array:
+    """tanh(count / 4) of living members of OTHER families in the entity's grid cell.
 
-    0 food scent left    1 food scent right
-    2 nest scent left    3 nest scent right
-    4 crowd              5 signal heard
-    6 carrying           7 colony energy
-    8 memory 0           9 memory 1
+    Same bucket trick as neighbour_stats: count everyone per cell, count each
+    family per cell, and subtract the entity's own family.
+    """
+    G, K = cfg.neighbour_grid, cfg.n_families
+    xy = jnp.clip((state.pos * G).astype(jnp.int32), 0, G - 1)
+    cell = xy[:, 1] * G + xy[:, 0]
+    family = state.col_family[state.colony]
+    present = state.alive.astype(jnp.float32)
+    everyone = jax.ops.segment_sum(present, cell, G * G)
+    by_family = jax.ops.segment_sum(present, family * G * G + cell, K * G * G)
+    foreign = everyone[cell] - by_family[family * G * G + cell]
+    return jnp.where(state.alive, jnp.tanh(foreign / 4.0), 0.0)
+
+
+def territory_sense(state: WorldState, points: Array, cfg: Config) -> Array:
+    """tanh(own family's scent - everyone else's) at each entity's sample point."""
+    own, foreign = scent_at(state, points, state.col_family[state.colony], cfg)
+    return jnp.tanh(own - foreign)
+
+
+def observe(state: WorldState, cfg: Config) -> Array:
+    """The (N, 13) input matrix. Column order is fixed, and the predicted
+    senses come first so that obs[:, :n_predictions] selects them:
+
+    0 food scent left     1 food scent right
+    2 nest scent left     3 nest scent right
+    4 crowd               5 signal heard
+    6 territory left      7 territory right     8 foreign members nearby
+    9 carrying            10 colony energy
+    11 memory 0           12 memory 1
     """
     left, right = sensor_points(state.pos, state.heading, cfg)
     own_nest = state.nest[state.colony]
@@ -94,6 +120,9 @@ def observe(state: WorldState, cfg: Config) -> Array:
         nest_scent(right, own_nest, cfg),
         crowd,
         heard,
+        territory_sense(state, left, cfg),
+        territory_sense(state, right, cfg),
+        foreign_nearby(state, cfg),
         state.carrying.astype(jnp.float32),
         jnp.tanh(state.energy[state.colony] / 100.0),
         state.memory[:, 0],

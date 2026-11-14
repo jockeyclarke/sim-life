@@ -56,7 +56,7 @@ test("name lists match the protocol's lengths", () => {
   expect(INPUT_NAMES.length).toBe(snap.inspect.inputs.length);
   expect(ACTION_NAMES.length).toBe(snap.inspect.actions.length);
   expect(PREDICTED_NAMES.length).toBe(snap.inspect.predicted.length);
-  expect(PREDICTED_NAMES).toEqual(INPUT_NAMES.slice(0, 6));
+  expect(PREDICTED_NAMES).toEqual(INPUT_NAMES.slice(0, 9));
 });
 
 import { selectionChanged } from "./inspector";

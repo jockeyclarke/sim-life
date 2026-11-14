@@ -1,4 +1,5 @@
 import type { HistoryRecord } from "./protocol";
+import { familyColor, familyDash } from "./families";
 import { cssVar, fitCanvas } from "./theme";
 
 type Field = "colonies" | "members" | "energy" | "delivery_rate" | "pred_error" | "learning_rate";
@@ -35,6 +36,33 @@ export function nearestMeasured(records: HistoryRecord[], tick: number): History
     if (best === null || Math.abs(record.tick - tick) < Math.abs(best.tick - tick)) best = record;
   }
   return best;
+}
+
+/** One family's value over time ("family_territory" share or "family_members"). */
+export function familySeries(records: HistoryRecord[], field: "family_territory" | "family_members", k: number): Point[] {
+  const points: Point[] = [];
+  for (const record of records) {
+    const value = record[field]?.[k];
+    if (typeof value === "number" && Number.isFinite(value)) points.push([record.tick, value]);
+  }
+  return points.sort((a, b) => a[0] - b[0]);
+}
+
+/** Families that held any territory at some point in these records. */
+export function familiesPresent(records: HistoryRecord[]): number[] {
+  const seen = new Set<number>();
+  for (const record of records) record.family_territory?.forEach((share, k) => share > 0 && seen.add(k));
+  return [...seen].sort((a, b) => a - b);
+}
+
+/** All strikes per record interval: own + foreign + border ground. */
+export function strikeSeries(records: HistoryRecord[]): Point[] {
+  const points: Point[] = [];
+  for (const r of records) {
+    if (typeof r.strikes_own !== "number") continue;
+    points.push([r.tick, r.strikes_own + (r.strikes_foreign ?? 0) + (r.strikes_border ?? 0)]);
+  }
+  return points.sort((a, b) => a[0] - b[0]);
 }
 
 export interface Scale {
@@ -75,13 +103,24 @@ function formatValue(v: number): string {
   return String(Number(v.toPrecision(2)));
 }
 
-const CHARTS: { field: Field; title: string }[] = [
+type ChartField = Field | "strikes" | "family_territory";
+
+/** The (tick, value) points one chart plots for one run. */
+function pointsFor(records: HistoryRecord[], field: ChartField): Point[] {
+  if (field === "strikes") return strikeSeries(records);
+  if (field === "family_territory") return []; // drawn per family, below
+  return seriesOf(records, field);
+}
+
+const CHARTS: { field: ChartField; title: string }[] = [
   { field: "colonies", title: "Colonies" },
   { field: "members", title: "Members" },
   { field: "energy", title: "Total energy" },
   { field: "delivery_rate", title: "Food per member per tick" },
   { field: "pred_error", title: "Prediction error" },
   { field: "learning_rate", title: "Learning rate" },
+  { field: "family_territory", title: "Territory by family" },
+  { field: "strikes", title: "Strikes per 100 ticks" },
 ];
 
 const HEIGHT = 92;
@@ -200,7 +239,12 @@ export class PopulationView {
     const plotH = HEIGHT - PAD.top - PAD.bottom;
     const xOf = (tick: number) => PAD.left + (tick / maxTick) * plotW;
     // vertical rules: a fresh start after extinction, or a switch being flipped
-    const reseeds = [...reseedTicks(this.current), ...eventTicks(this.current, "switch")];
+    const reseeds = [
+      ...reseedTicks(this.current),
+      ...eventTicks(this.current, "switch"),
+      ...eventTicks(this.current, "takeover"),
+    ];
+    const dark = matchMedia("(prefers-color-scheme: dark)").matches;
     const empty = this.current.length === 0 && this.overlay.length === 0;
 
     CHARTS.forEach((chart, index) => {
@@ -211,10 +255,17 @@ export class PopulationView {
       ctx.font = "11px system-ui, sans-serif";
       ctx.textBaseline = "middle";
 
-      const now = seriesOf(this.current, chart.field);
-      const then = seriesOf(this.overlay, chart.field);
-      const values = [...now, ...then].map((p) => p[1]);
-      const scale = niceScale(Math.min(0, ...values), Math.max(0, ...values), 3);
+      const now = pointsFor(this.current, chart.field);
+      const then = pointsFor(this.overlay, chart.field);
+      // Territory: one line per family in its own colour, on a 0-1 share axis.
+      // The overlay run is left off this chart; six more lines would be unreadable.
+      const families = chart.field === "family_territory" ? familiesPresent(this.current) : [];
+      const familyLines = families.map((k) => familySeries(this.current, "family_territory", k));
+      const values = [...now, ...then, ...familyLines.flat()].map((p) => p[1]);
+      const scale =
+        chart.field === "family_territory"
+          ? niceScale(0, 1, 2)
+          : niceScale(Math.min(0, ...values), Math.max(0, ...values), 3);
       const yOf = (v: number) => PAD.top + plotH - ((v - scale.lo) / (scale.hi - scale.lo)) * plotH;
 
       // title, in text ink (never the series colour)
@@ -224,14 +275,34 @@ export class PopulationView {
 
       // hover readout: this chart's value at the crosshair, right-aligned on the title row.
       // Values are in text ink; the short line beside each carries the series identity.
-      if (this.hoverTick !== null) {
+      if (families.length > 0) {
+        // legend: a short line in each family's colour, then its number
+        let right = PAD.left + plotW;
+        for (const k of [...families].reverse()) {
+          const label = `${k}`;
+          ctx.textAlign = "right";
+          ctx.fillStyle = text;
+          ctx.fillText(label, right, 8);
+          right -= ctx.measureText(label).width + 3;
+          ctx.strokeStyle = familyColor(k, dark);
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(right - 10, 8);
+          ctx.lineTo(right, 8);
+          ctx.stroke();
+          right -= 16;
+        }
+        ctx.textAlign = "left";
+      } else if (this.hoverTick !== null) {
         let right = PAD.left + plotW;
         const entries: [HistoryRecord | null, string, number[]][] = [
           [this.overlayId === null ? null : nearestMeasured(this.overlay, this.hoverTick), colors.overlay, [3, 2]],
           [nearestMeasured(this.current, this.hoverTick), colors.current, []],
         ];
         for (const [record, color, dash] of entries) {
-          const v = record?.[chart.field];
+          const v = chart.field === "strikes"
+            ? (record ? strikeSeries([record])[0]?.[1] : undefined)
+            : record?.[chart.field as Field];
           if (typeof v !== "number" || !Number.isFinite(v)) continue;
           const label = formatValue(v);
           ctx.textAlign = "right";
@@ -302,6 +373,7 @@ export class PopulationView {
       };
       path(then, colors.overlay, [5, 4]); // dashed as well as coloured, so identity is never colour alone
       path(now, colors.current, []);
+      families.forEach((k, i) => path(familyLines[i]!, familyColor(k, dark), familyDash(k)));
       ctx.setLineDash([]);
 
       if (this.hoverTick !== null && !empty) {

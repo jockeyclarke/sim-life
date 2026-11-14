@@ -1,6 +1,7 @@
+import { drawTerritory, familyColor, familyDash } from "./families";
 import type { Snapshot } from "./protocol";
 
-export type ColorMode = "colony" | "carrying" | "error";
+export type ColorMode = "family" | "colony" | "carrying" | "food" | "error" | "aggression";
 
 export interface Theme {
   background: string;
@@ -35,6 +36,11 @@ export function errorLightness(value: number, max: number, dark: boolean): numbe
 
 export function errorColor(value: number, max: number, dark: boolean): string {
   return `hsl(22, 85%, ${errorLightness(value, max, dark).toFixed(1)}%)`;
+}
+
+/** Aggression is a magnitude in [0, 1]: one hue, the same lightness ramp as error. */
+export function aggressionColor(value: number, dark: boolean): string {
+  return `hsl(350, 75%, ${errorLightness(value, 1, dark).toFixed(1)}%)`;
 }
 
 /** The value below which `fraction` of the entries fall. Used so one outlier doesn't wash out a colour scale. */
@@ -75,10 +81,16 @@ export function drawWorld(
   size: number,
   mode: ColorMode,
   theme: Theme,
+  shadeTerritory = false,
+  trails: CanvasImageSource | null = null,
 ): void {
   const a = snap.arrays;
   ctx.fillStyle = theme.background;
   ctx.fillRect(0, 0, size, size);
+  if (shadeTerritory) {
+    const grid = snap.shapes.territory_owner?.[0] ?? 0;
+    drawTerritory(ctx, a.territory_owner, a.territory_strength, grid, size, theme.dark);
+  }
 
   // Food: small dots.
   const food = a.food_pos ?? new Float32Array();
@@ -91,18 +103,26 @@ export function drawWorld(
   }
   ctx.fill();
 
+  // "food" mode: the fading paths carriers have taken, under everything that moves
+  if (mode === "food" && trails) ctx.drawImage(trails, 0, 0, size, size);
+
   // Nests: a ring per colony, growing with its member count.
   const nests = a.colony_nest ?? new Float32Array();
   const colonySlots = a.colony_slot ?? new Float32Array();
   const colonyMembers = a.colony_members ?? new Float32Array();
+  const colonyFamily = a.colony_family;
   ctx.lineWidth = 2;
   for (let k = 0; k < colonySlots.length; k++) {
     const [x, y] = worldToCanvas(nests[2 * k]!, nests[2 * k + 1]!, size);
-    ctx.strokeStyle = colonyColor(colonySlots[k]!);
+    const family = colonyFamily?.[k];
+    // a nest's family shows in its colour AND its ring pattern
+    ctx.strokeStyle = family === undefined || mode === "colony" ? colonyColor(colonySlots[k]!) : familyColor(family, theme.dark);
+    ctx.setLineDash(family === undefined ? [] : familyDash(family));
     ctx.beginPath();
     ctx.arc(x, y, 5 + Math.sqrt(colonyMembers[k]!), 0, TWO_PI);
     ctx.stroke();
   }
+  ctx.setLineDash([]);
 
   // Members: a short mark pointing along the heading, with a dot at the head when carrying.
   const pos = a.member_pos ?? new Float32Array();
@@ -110,6 +130,8 @@ export function drawWorld(
   const colony = a.member_colony ?? new Float32Array();
   const carrying = a.member_carrying ?? new Float32Array();
   const errors = a.member_error ?? new Float32Array();
+  const memberFamily = a.member_family;
+  const aggression = a.member_aggression;
   const slots = a.member_slot ?? new Float32Array();
   const errorMax = mode === "error" ? percentile(errors, 0.95) : 0;
   const selected = snap.inspect?.alive ? snap.inspect.slot : null;
@@ -120,12 +142,24 @@ export function drawWorld(
     const dx = Math.cos(heading[i]!) * length;
     const dy = Math.sin(heading[i]!) * length;
     const isCarrying = carrying[i]! > 0.5;
+    if (mode === "food" && !isCarrying && slots[i] !== selected) {
+      // everyone not moving food recedes to a faint dot
+      ctx.fillStyle = theme.muted;
+      ctx.globalAlpha = 0.35;
+      ctx.fillRect(x - 1, y - 1, 2, 2);
+      ctx.globalAlpha = 1;
+      continue;
+    }
     const color =
-      mode === "colony"
+      mode === "colony" || (mode === "family" && !memberFamily)
         ? colonyColor(colony[i]!)
-        : mode === "error"
+        : mode === "family"
+          ? familyColor(memberFamily![i]!, theme.dark)
+          : mode === "aggression"
+            ? aggressionColor(aggression?.[i] ?? 0, theme.dark)
+            : mode === "error"
           ? errorColor(errors[i] ?? 0, errorMax, theme.dark)
-          : isCarrying
+          : isCarrying || mode === "food"
             ? theme.accent
             : theme.muted;
     ctx.strokeStyle = color;
@@ -144,10 +178,23 @@ export function drawWorld(
       ctx.restore();
     }
     if (isCarrying) {
-      ctx.fillStyle = mode === "carrying" ? theme.accent : theme.food;
-      ctx.beginPath();
+      ctx.fillStyle = mode === "carrying" ? theme.accent : theme.food;      ctx.beginPath();
       ctx.arc(x + dx / 2, y + dy / 2, 2, 0, TWO_PI);
       ctx.fill();
     }
   }
+
+  // strikes this tick: a small cross where each striker stands
+  const strikes = a.strike_pos ?? new Float32Array();
+  ctx.strokeStyle = theme.text;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let i = 0; i < strikes.length; i += 2) {
+    const [x, y] = worldToCanvas(strikes[i]!, strikes[i + 1]!, size);
+    ctx.moveTo(x - 4, y - 4);
+    ctx.lineTo(x + 4, y + 4);
+    ctx.moveTo(x + 4, y - 4);
+    ctx.lineTo(x - 4, y + 4);
+  }
+  ctx.stroke();
 }

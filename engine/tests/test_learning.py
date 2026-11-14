@@ -72,7 +72,7 @@ def test_last_pred_is_the_prediction_that_was_scored():
     s = run_ticks(world(), cfg, 5)
     s1 = jax.jit(lambda s: step(s, cfg))(s)
     a = s1.alive
-    actual = s1.prev_obs[:, :6]  # what was sensed this tick
+    actual = s1.prev_obs[:, : cfg.n_predictions]  # what was sensed this tick
     scored = jnp.mean((s1.last_pred - actual) ** 2, axis=1)
     assert jnp.allclose(s1.pred_error[a], scored[a], rtol=1e-5, atol=1e-7)
 

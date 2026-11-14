@@ -41,10 +41,17 @@ def act(params: dict, x: Array) -> tuple[Array, Array, Array, Array]:
     """One entity's decision for one tick.
 
     Returns (turn in [-1, 1], speed in [0, 1], signal in [-1, 1],
-    memory (2,) in [-1, 1]). Scaling to world units happens in physics.
+    memory (2,) in [-1, 1], aggression in [0, 1]). Scaling to world units
+    happens in physics; what aggression does is decided in combat.
     """
     o = params["w2"] @ hidden(params, x) + params["b2"]
-    return jnp.tanh(o[0]), jax.nn.sigmoid(o[1]), jnp.tanh(o[2]), jnp.tanh(o[3:5])
+    return (
+        jnp.tanh(o[0]),
+        jax.nn.sigmoid(o[1]),
+        jnp.tanh(o[2]),
+        jnp.tanh(o[3:5]),
+        jax.nn.sigmoid(o[5]),
+    )
 
 
 def predict(params: dict, x: Array) -> Array:

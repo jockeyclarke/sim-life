@@ -1,29 +1,35 @@
-"""Does a default world get going by itself? Slow: run with  pytest -m slow"""
+"""Does the evolve-then-seed workflow produce a contest? Slow: run with  pytest -m slow
 
-import jax.numpy as jnp
+Random-start worlds rarely reach the contest between families (see the stage 3
+ledger), so stage 3 worlds are seeded from an evolved source population.
+"""
+
 import pytest
 
 from simlife.config import Config
 from simlife.metrics import compute_metrics
-from simlife.recorder import Recorder
+from simlife.recorder import Recorder, load_survivors
 from simlife.runner import Runner
 
 
 @pytest.mark.slow
-def test_default_world_bootstraps(tmp_path):
+def test_seeded_worlds_reach_the_contest(tmp_path):
     cfg = Config()
-    took_hold = []
+    nursery = Runner(cfg, 11, Recorder(tmp_path / "nursery", cfg, 11))
+    nursery.advance(cfg.grace_ticks)  # a grace period's worth of evolution
+    nursery.checkpoint()
+    params, lr = load_survivors(nursery.recorder.run_dir, cfg)
+    founders = {"params": params, "lr": lr}
+
+    alive, contested = 0, 0
     for seed in range(5):
-        runner = Runner(cfg, seed, Recorder(tmp_path, cfg, seed))
+        recorder = Recorder(tmp_path / "worlds", cfg, seed, founders=founders)
+        runner = Runner(cfg, seed, recorder)
         runner.reseed_on_extinction = False  # no second chances
-        runner.advance(20_000)
+        runner.advance(cfg.grace_ticks + 10_000)  # 10,000 ticks of competition
         m = compute_metrics(runner.state)
-        s = runner.state
-        has_split = int(jnp.where(s.col_alive, s.col_generation, 0).max()) > 0
-        took_hold.append(
-            not runner.extinct and m["delivered"] > 0
-            and m["max_generation"] >= 5 and has_split
-        )
+        alive += not runner.extinct
+        contested += m["families"] >= 2
         # scarcity, not array capacity, must be what limits the population
         assert m["members"] < 0.8 * cfg.capacity_members, (seed, m)
-    assert sum(took_hold) >= 3, took_hold
+    assert alive >= 4 and contested >= 2, (alive, contested)

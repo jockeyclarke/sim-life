@@ -18,9 +18,11 @@ import jax.numpy as jnp
 import numpy as np
 
 from .config import Config
+from .brain import init_params
 from .state import WorldState, init_world
 
 _EXTRA_PREFIX = "_runner."
+STRIKE_KINDS = ("own", "foreign", "border")
 
 
 def save_state(path: Path, state: WorldState, extra: dict | None = None) -> None:
@@ -100,6 +102,15 @@ def read_history(run_dir: Path) -> list[dict]:
     return records
 
 
+def _read_founders(run_dir: Path) -> dict | None:
+    path = run_dir / FOUNDERS_FILE
+    if not path.exists():
+        return None
+    with np.load(path) as data:
+        params = {k[len("params."):]: data[k] for k in data.files if k.startswith("params.")}
+        return {"params": params, "lr": data["lr"]}
+
+
 def list_runs(runs_dir: Path) -> list[str]:
     """Run ids, newest first."""
     runs_dir = Path(runs_dir)
@@ -109,17 +120,62 @@ def list_runs(runs_dir: Path) -> list[str]:
     return sorted(ids, reverse=True)
 
 
+FOUNDERS_FILE = "founders.npz"
+
+
+def load_survivors(run_dir: Path, cfg: Config) -> tuple[dict, np.ndarray]:
+    """(params, lr) of the living members in a run's latest checkpoint.
+
+    Used to seed a new run. Raises ValueError if the source's networks have a
+    different shape from this run's, or if nothing in it is alive.
+    """
+    run_dir = Path(run_dir)
+    checkpoints = sorted((run_dir / "checkpoints").glob("state-*.npz"))
+    if not checkpoints:
+        raise ValueError(f"no checkpoint to take survivors from in {run_dir}")
+    expected = init_params(jax.random.key(0), cfg)
+    with np.load(checkpoints[-1]) as data:
+        alive = data["alive"].astype(bool)
+        if not alive.any():
+            raise ValueError(f"{run_dir} has no living members to seed from")
+        params = {}
+        for name, want in expected.items():
+            label = f"params.{name}"
+            if label not in data.files or data[label].shape[1:] != want.shape:
+                got = data[label].shape[1:] if label in data.files else "missing"
+                raise ValueError(
+                    f"survivors in {run_dir} have a different network shape: "
+                    f"'{name}' is {got}, this run needs {tuple(want.shape)}"
+                )
+            params[name] = data[label][alive]
+        lr = data["lr"][alive] if "lr" in data.files else np.full(alive.sum(), cfg.initial_lr)
+    return params, lr
+
+
 class Recorder:
-    def __init__(self, runs_dir: Path, cfg: Config, seed: int, _existing: Path | None = None):
+    def __init__(
+        self,
+        runs_dir: Path,
+        cfg: Config,
+        seed: int,
+        _existing: Path | None = None,
+        founders: dict | None = None,
+        seeded_from: str | None = None,
+    ):
         self.cfg = cfg
         self.seed = seed
+        self.founders = founders  # pool of survivors this run's worlds are seeded from
         self._previous: tuple[int, int] | None = None  # (tick, delivered) of last record
+        self._previous_strikes = {kind: 0 for kind in STRIKE_KINDS}  # cumulative, at last record
         if _existing is not None:
             self.run_dir = Path(_existing)
             self.run_id = self.run_dir.name
+            self.founders = _read_founders(self.run_dir)
             measured = [r for r in read_history(self.run_dir) if "delivered" in r]
             if measured:
                 self._previous = (measured[-1]["tick"], measured[-1]["delivered"])
+                for kind in STRIKE_KINDS:
+                    self._previous_strikes[kind] = measured[-1].get(f"strikes_{kind}_total", 0)
             return
 
         base = f"{time.strftime('%Y%m%d-%H%M%S')}-s{seed}"
@@ -134,6 +190,11 @@ class Recorder:
         self.run_id = run_id
         self.run_dir = Path(runs_dir) / run_id
         settings = {"run_id": run_id, "seed": seed, "config": cfg.to_dict()}
+        if seeded_from is not None:
+            settings["seeded_from"] = seeded_from
+        if founders is not None:  # kept with the run, for its fresh starts and resumes
+            arrays = {f"params.{k}": np.asarray(v) for k, v in founders["params"].items()}
+            np.savez(self.run_dir / FOUNDERS_FILE, lr=np.asarray(founders["lr"]), **arrays)
         (self.run_dir / "settings.json").write_text(json.dumps(settings, indent=2))
 
     def record(self, metrics: dict, events: list[dict] | None = None) -> dict:
@@ -151,6 +212,12 @@ class Recorder:
         self._previous = (metrics["tick"], metrics["delivered"])
 
         record = {**metrics, "delivery_rate": rate}
+        # strikes since the previous record, by the ground they happened on
+        for kind in STRIKE_KINDS:
+            total = metrics.get(f"strikes_{kind}_total")
+            if total is not None:
+                record[f"strikes_{kind}"] = total - self._previous_strikes[kind]
+                self._previous_strikes[kind] = total
         if events:
             record["events"] = list(events)
         with open(self.run_dir / "history.jsonl", "a") as f:

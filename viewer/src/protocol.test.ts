@@ -5,10 +5,10 @@ import { readFixture } from "./testFixture";
 test("decodes the engine's fixture", () => {
   const snap = decodeSnapshot(readFixture("snapshot.bin"));
   expect(snap.tick).toBe(0);
-  expect(snap.arrays.member_pos!.length).toBe(192 * 2);
-  expect(snap.shapes.colony_nest).toEqual([16, 2]);
+  expect(snap.arrays.member_pos!.length).toBe(snap.metrics.members * 2);
+  expect(snap.shapes.colony_nest).toEqual([snap.metrics.colonies, 2]);
   expect(snap.status.run_id).toBe("fixture");
-  expect(snap.metrics.members).toBe(192);
+  expect(snap.metrics.members).toBe(216); // 18 nests of 12
   for (const v of snap.arrays.member_pos!) {
     expect(v).toBeGreaterThanOrEqual(0);
     expect(v).toBeLessThan(1);
@@ -57,10 +57,10 @@ test("fixture carries an inspection and member errors", () => {
   expect(snap.inspect?.alive).toBe(true);
   if (snap.inspect?.alive) {
     expect(snap.inspect.slot).toBe(0);
-    expect(snap.inspect.inputs.length).toBe(10);
-    expect(snap.inspect.weights.w3.length).toBe(6);
+    expect(snap.inspect.inputs.length).toBe(13);
+    expect(snap.inspect.weights.w3.length).toBe(9);
   }
-  expect(snap.arrays.member_error!.length).toBe(192);
+  expect(snap.arrays.member_error!.length).toBe(snap.metrics.members);
   expect(snap.status.learning).toBe(true);
   expect(snap.status.inheritance).toBe("learned");
 });
@@ -71,4 +71,23 @@ test("a snapshot from an older engine has no inspection", () => {
   new DataView(frame.buffer).setUint32(0, head.length, true);
   frame.set(head, 4);
   expect(decodeSnapshot(frame.buffer).inspect).toBeNull();
+});
+
+import { pickMember } from "./worldView";
+
+test("a snapshot without family arrays still decodes and pickMember works", () => {
+  const head = new TextEncoder().encode(
+    JSON.stringify({ type: "snapshot", tick: 1, metrics: {}, status: {}, arrays: [
+      { name: "member_pos", shape: [1, 2] }, { name: "member_slot", shape: [1] },
+    ] }),
+  );
+  const frame = new Uint8Array(4 + head.length + 12);
+  new DataView(frame.buffer).setUint32(0, head.length, true);
+  frame.set(head, 4);
+  new Float32Array(frame.buffer.slice(4 + head.length)).set([0.5, 0.5, 7]);
+  const body = new Float32Array([0.5, 0.5, 7]);
+  frame.set(new Uint8Array(body.buffer), 4 + head.length);
+  const snap = decodeSnapshot(frame.buffer);
+  expect(snap.arrays.member_family).toBeUndefined();
+  expect(pickMember(snap, 400, 400, 800)).toBe(7);
 });

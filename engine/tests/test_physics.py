@@ -1,3 +1,5 @@
+import dataclasses
+
 import jax.numpy as jnp
 
 from helpers import blank, food, member, small_cfg
@@ -72,6 +74,6 @@ def test_deliver_credits_own_colony_only():
 def test_metabolise_charges_colony_pool():
     s = member(member(blank(cfg), 0, (0.5, 0.5)), 1, (0.6, 0.6))
     speed = jnp.zeros(N).at[1].set(1.0).at[4].set(1.0)  # slot 4 is dead
-    s2 = metabolise(s, speed, cfg)
+    s2 = metabolise(s, speed, dataclasses.replace(cfg, upkeep_rate=0.0))  # upkeep is tested in test_territory
     assert jnp.isclose(s2.energy[0], 10.0 - (2 * cfg.base_cost + cfg.speed_cost))
     assert s2.energy[1] == 10.0

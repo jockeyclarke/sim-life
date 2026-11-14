@@ -109,10 +109,29 @@ These would make the project a failure even if it runs:
 - Every colony belongs to a **family**, which never changes. A daughter
   colony belongs to its parent's family. Members of the same family are
   friends; members of different families are foes.
-- A run starts with a few founding families, each with several nests and
-  one founding network shared by all of them. Six families of three nests
-  each, with each family's nests near one another. **(call: the numbers
-  and the clustering, both settings)**
+- **Families form from a foraging world** (Paul's choice, after tuning showed
+  random founding families rarely include a viable forager). A world starts
+  as in stages 1 and 2: separate colonies, each with its own random
+  network, nests scattered. During the grace period nothing competes, and
+  colonies evolve to forage. Colonies do carry provisional regional family
+  labels then, so their territory senses and the viewer's family colours
+  already work, but no upkeep or strike happens and no takeover is
+  recorded. **(call)** When it ends, every living colony joins the
+  family of the nearest of six regional centres drawn when the world was
+  founded, and territory scent is cleared so the contest starts fresh.
+  From then on daughters inherit their parent's family. With a grace period
+  of zero, families are assigned by region from the start. **(call: six
+  centres, nearest-centre assignment, scent cleared)**
+- **Grace period:** no upkeep or strikes for the first 20,000 ticks of each
+  world (a setting). A fresh start after total extinction is a new world and
+  gets its own grace period. **(call)**
+- **Seeding from survivors:** a new run can take its founding networks from
+  the living members of an earlier run's latest checkpoint (Paul's request).
+  Each founding colony gets one survivor's network, drawn at random. The
+  survivors are copied into the new run, so its fresh starts and resumes
+  use them too. A run whose networks have a different shape is refused
+  with a clear error. **(call: the copy, and drawing one survivor per
+  colony)**
 - **Where daughters go.** As in stages 1 and 2, a daughter colony's nest is
   placed a fixed distance from its parent's, in a random direction. So a
   family grows outward from its existing nests, and intruder nests arise

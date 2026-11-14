@@ -27,6 +27,7 @@ export function describeStatus(status: Status, metrics: Metrics): string {
 
 export interface ControlsOptions {
   onColorMode(mode: ColorMode): void;
+  onShadeTerritory(on: boolean): void;
   onOverlay(runId: string | null): void;
 }
 
@@ -71,11 +72,17 @@ export function mountControls(
   };
 
   const colorMode = el("select", {}, [
+    el("option", { value: "family", textContent: "by family" }),
     el("option", { value: "colony", textContent: "by colony" }),
     el("option", { value: "carrying", textContent: "by carrying food" }),
+    el("option", { value: "food", textContent: "food in transit (carriers and trails)" }),
     el("option", { value: "error", textContent: "by prediction error" }),
+    el("option", { value: "aggression", textContent: "by aggression" }),
   ]);
   colorMode.onchange = () => options.onColorMode(colorMode.value as ColorMode);
+
+  const shade = el("input", { type: "checkbox", checked: true });
+  shade.onchange = () => options.onShadeTerritory(shade.checked);
 
   const reseed = el("input", { type: "checkbox", checked: true });
   reseed.onchange = () => send({ type: "reseed_on_extinction", value: reseed.checked });
@@ -99,6 +106,7 @@ export function mountControls(
     el("div", { className: "row" }, [pauseButton]),
     el("label", {}, ["Ticks per frame ", speedValue, speed]),
     el("label", {}, ["Colour members ", colorMode]),
+    el("label", { className: "check" }, [shade, " Shade territory"]),
     el("label", { className: "check" }, [reseed, " Start fresh colonies when all have died"]),
     el("label", { className: "check" }, [learning, " Members learn during their lives"]),
     el("label", {}, ["Offspring inherit ", inheritance]),

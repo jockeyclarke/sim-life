@@ -5,9 +5,12 @@ neural network, forage for food in a shared world. There is no fitness
 function: a colony lives while its shared energy pool lasts, grows when it has
 a surplus, splits when it gets large, and dies when it runs out.
 
-This is stage 2 of three. Networks change in two ways: by mutation when a
-member divides, and during life, as each member learns to predict its own
-next senses. Poison (stage 3) is described in
+All three stages are built. Networks change in two ways: by mutation and
+two-parent crossover when a colony gains a member, and during life, as each
+member learns to predict its own next senses. A world starts with independent colonies that have 20,000 ticks
+to learn to forage. Then they are divided by region into six **families**
+that mark territory, pay upkeep on foreign ground, and can evolve to strike
+members of other families. See
 [the design](docs/superpowers/specs/2026-11-12-colony-life-sim-design.md).
 
 ## Setup
@@ -45,6 +48,29 @@ resumed run keeps the switches it was left with.
 .venv/bin/python -m simlife run --no-serve --ticks 300000 --seed 1
 ```
 
+### Stage 3: evolve, then seed
+
+Worlds started from random networks rarely produce more than one family that
+can forage, so the contest between families seldom begins. The reliable way
+is two steps:
+
+1. **Evolve a source population** (a "nursery"): a headless run long enough
+   to cover the grace period, during which nothing competes.
+
+   ```sh
+   .venv/bin/python -m simlife run --no-serve --ticks 20000 --seed 11 --runs-dir runs
+   ```
+
+   A nursery is already provided at `runs/nursery` (seed 11, 449 members).
+
+2. **Seed contest worlds from it.** Each founding colony starts from one of
+   the nursery's survivors; families form by region when the new world's
+   grace period ends.
+
+   ```sh
+   .venv/bin/python -m simlife run --seed 1 --seed-from runs/nursery
+   ```
+
 ### Resuming a run
 
 ```sh
@@ -62,6 +88,7 @@ resumed run keeps the switches it was left with.
 | `--no-reseed` | off | When every colony has died, stop instead of starting fresh ones. |
 | `--no-learning` | off | Switch lifetime learning off, for a pure-evolution run. |
 | `--inherit learned\|birth` | learned | What offspring copy: what the parent learned, or what the parent was born with. |
+| `--seed-from RUN_DIR` | none | Found this run's colonies from the living members of an earlier run's latest checkpoint. The survivors are copied into the new run, so its fresh starts and resumes use them too. |
 | `--runs-dir DIR` | `runs` | Where runs are recorded. |
 | `--host`, `--port` | 127.0.0.1, 8765 | Where the viewer server listens. |
 
@@ -69,7 +96,11 @@ resumed run keeps the switches it was left with.
 
 - **World.** Rings are nests, green dots are food, short marks are members
   pointing along their heading. A dot at a member's head means it is carrying
-  food.
+  food. Each family has its own colour and its own nest-ring pattern (six
+  colours are not all distinguishable for everyone, so the pattern is a
+  second cue). Crosses mark this tick's strikes.
+- **Shade territory.** Tints the ground by which family's scent dominates
+  it, more strongly where that family's hold is stronger.
 - **Ticks per frame.** How many simulation ticks run between redraws, from 1
   to 1000.
 - **Start fresh colonies when all have died.** If every colony dies, the run
@@ -81,8 +112,10 @@ resumed run keeps the switches it was left with.
 - **Offspring inherit.** Whether a new member copies what its parent learned
   or what its parent was born with. Both switches can be flipped mid-run;
   each flip is marked on the charts and recorded in the run's history.
-- **Colour members by prediction error.** Members whose predictions are
-  furthest off stand out most.
+- **Colour members** by family (the default), colony, carrying food,
+  prediction error, or aggression. **Food in transit** shows only the
+  carriers, each leaving a fading trail, with everyone else as a faint dot,
+  so you can watch food flow from the field into the nests.
 - **Inspector.** Click a member to select it; click empty space to clear.
   The panel shows what it senses, its hidden activations and actions this
   tick, its last prediction against what happened, its prediction error
@@ -92,7 +125,9 @@ resumed run keeps the switches it was left with.
 - **Population.** Colonies, members, total energy, food delivered per member
   per tick, mean prediction error, and mean learning rate. The learning rate
   is inherited and mutates, so its drift shows whether evolution is turning
-  learning up or down.
+  learning up or down. Stage 3 adds **territory by family** (each family's
+  share of the ground; a takeover shows as one line rising while the others
+  fall to zero, and is marked with a rule) and **strikes per 100 ticks**.
 - **Compare with run.** Overlays a recorded run on the charts as a dashed line.
 
 Page options: `?port=8765` sets the engine's port, and `?compare=previous`
@@ -108,9 +143,8 @@ Each run gets a directory under `runs/`:
 | `history.jsonl` | One record of measures every 100 ticks, plus a line for each extinction or fresh start at the tick it happened. |
 | `checkpoints/state-<tick>.npz` | The full world state, every 50,000 ticks and on exit. |
 
-Runs recorded before lifetime learning was added (stage 1) cannot be resumed,
-because their checkpoints lack the learning state. Their histories still load
-for comparison.
+Runs recorded by an earlier stage cannot be resumed, because the network and
+world have changed shape. Their histories still load for comparison.
 
 ## Settings
 
@@ -134,6 +168,8 @@ The engine is written so the whole simulation is one pure function,
 | [lifecycle.py](engine/simlife/lifecycle.py) | Births into fixed-capacity arrays, mutation, colony splitting. |
 | [step.py](engine/simlife/step.py) | The order of one tick, and the compiled loop. |
 | [runner.py](engine/simlife/runner.py) | Recording, checkpoints, and what happens at extinction. |
+| [territory.py](engine/simlife/territory.py) | Each family's scent field: laid, spread, faded; who owns which ground. |
+| [combat.py](engine/simlife/combat.py) | Strikes: home advantage, costs, and how they are counted. |
 | [inspect.py](engine/simlife/inspect.py) | One member's internals read out of the population arrays. |
 | [protocol.py](engine/simlife/protocol.py), [server.py](engine/simlife/server.py) | The snapshot format and the viewer server. |
 
@@ -141,7 +177,7 @@ The engine is written so the whole simulation is one pure function,
 
 ```sh
 .venv/bin/pytest                 # engine, about a minute
-.venv/bin/pytest -m slow         # does a default world take hold? about 3 minutes
+.venv/bin/pytest -m slow         # do seeded worlds reach the contest? about 20 minutes
 cd viewer && npm test            # viewer
 ```
 

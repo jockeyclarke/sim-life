@@ -24,16 +24,17 @@ def test_inspect_entity_is_json_ready_and_consistent():
     d = inspect_entity(s, cfg, slot)
     json.dumps(d)
     assert d["slot"] == slot and d["alive"] is True
-    assert len(d["inputs"]) == 10 and len(d["hidden"]) == 8 and len(d["actions"]) == 5
-    assert len(d["predicted"]) == len(d["actual"]) == len(d["next_prediction"]) == 6
+    assert len(d["inputs"]) == cfg.n_inputs and len(d["hidden"]) == 8 and len(d["actions"]) == cfg.n_actions
+    P = cfg.n_predictions
+    assert len(d["predicted"]) == len(d["actual"]) == len(d["next_prediction"]) == P
     w = d["weights"]
-    assert (len(w["w1"]), len(w["w1"][0])) == (8, 10)
-    assert (len(w["w2"]), len(w["w2"][0])) == (5, 8)
-    assert (len(w["w3"]), len(w["w3"][0])) == (6, 8)
-    assert len(w["b1"]) == 8 and len(w["b2"]) == 5 and len(w["b3"]) == 6
+    assert (len(w["w1"]), len(w["w1"][0])) == (8, cfg.n_inputs)
+    assert (len(w["w2"]), len(w["w2"][0])) == (cfg.n_actions, 8)
+    assert (len(w["w3"]), len(w["w3"][0])) == (P, 8)
+    assert len(w["b1"]) == 8 and len(w["b2"]) == cfg.n_actions and len(w["b3"]) == P
     scored = np.mean((np.array(d["predicted"]) - np.array(d["actual"])) ** 2)
     assert d["error"] == pytest.approx(scored, rel=1e-4)
-    assert d["actual"] == pytest.approx(d["inputs"][:6])
+    assert d["actual"] == pytest.approx(d["inputs"][:P])
     assert d["learning_rate"] == pytest.approx(float(s.lr[slot]))
     assert d["age"] == int(s.age[slot]) and d["colony"] == int(s.colony[slot])
     assert all(-1 <= v <= 1 for v in d["hidden"]) and 0 <= d["actions"][1] <= 1
