@@ -13,8 +13,8 @@ Variants (what the network does):
     food-only  not carrying: turn toward food;  carrying: go straight
     nest-only  not carrying: go straight;       carrying: turn toward the nest
 
-How the wiring works. Inputs: 1 food direction (+ means food on the left),
-2/3 nest scent left/right, 9 carrying (0 or 1). A positive turn swings toward
+How the wiring works. Inputs: 1 food direction and 3 nest direction (+ means
+on the left), 9 carrying (0 or 1). A positive turn swings toward
 the left sensor. Each behaviour is a pair of hidden units, h = tanh(±g·signal
 + gate), read out as their difference. A gate of -6 saturates both units at
 -1, so the difference, and the behaviour, vanishes; a gate of 0 lets the
@@ -35,9 +35,9 @@ from simlife.senses import observe, wrap_delta
 from simlife.state import init_world
 from simlife.step import run_ticks
 
-FOOD_DIR, NEST_L, NEST_R, CARRYING = 1, 2, 3, 9
+FOOD_DIR, NEST_DIR, CARRYING = 1, 3, 9
 GATE = 6.0  # large enough to saturate tanh
-FOOD_GAIN, NEST_GAIN, READOUT = 2.0, 40.0, 1.5
+FOOD_GAIN, NEST_GAIN, READOUT = 2.0, 2.0, 1.5
 
 
 def handwired(cfg: Config, food: bool, nest: bool, nest_gain: float = NEST_GAIN) -> dict:
@@ -50,7 +50,7 @@ def handwired(cfg: Config, food: bool, nest: bool, nest_gain: float = NEST_GAIN)
         w2[0, 0], w2[0, 1] = READOUT, -READOUT
     if nest:  # units 2, 3: on when carrying
         for unit, sign in [(2, 1), (3, -1)]:
-            w1[unit, NEST_L], w1[unit, NEST_R] = sign * nest_gain, -sign * nest_gain
+            w1[unit, NEST_DIR] = sign * nest_gain
             w1[unit, CARRYING], b1[unit] = GATE, -GATE
         w2[0, 2], w2[0, 3] = READOUT, -READOUT
     b2[1] = 3.0  # speed: sigmoid(3) = 0.95

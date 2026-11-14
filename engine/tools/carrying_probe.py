@@ -52,7 +52,8 @@ def sample(state, obs, flipped):
     return dict(
         turn=turn, speed=speed, turn_f=turn_f, speed_f=speed_f,
         nest_facing=nest_facing,
-        nest_lr=obs[:, 2] - obs[:, 3], food_lr=obs[:, 1],  # food direction: + means food on the left
+        nest_lr=obs[:, 3],  # nest direction: + means nest on the left
+        food_lr=obs[:, 1],  # food direction: + means food on the left
     )
 
 

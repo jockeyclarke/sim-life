@@ -43,8 +43,22 @@ def test_nest_scent_comes_from_own_nest_only():
     s = member(blank(cfg), 0, (0.8, 0.8), colony=0)
     s = member(s, 1, (0.2, 0.2), colony=0)
     obs = observe(s, cfg)
-    assert obs[0, 2] < 0.1 and obs[0, 3] < 0.1  # on the other colony's nest
-    assert obs[1, 2] > 0.8 and obs[1, 3] > 0.8  # on its own
+    assert obs[0, 2] < 0.1  # on the other colony's nest
+    assert obs[1, 2] > 0.8  # on its own
+
+
+def test_nest_direction_is_positive_left_negative_right_near_or_far():
+    # colony 0's nest is at (0.2, 0.2); heading 0 is along +x, the left sensor at larger y
+    for dist in (0.05, 0.3):
+        left = observe(member(blank(cfg), 0, (0.2, 0.2 - dist), heading=0.0, colony=0), cfg)
+        right = observe(member(blank(cfg), 0, (0.2, 0.2 + dist), heading=0.0, colony=0), cfg)
+        ahead = observe(member(blank(cfg), 0, (0.2 - dist, 0.2), heading=0.0, colony=0), cfg)
+        assert left[0, 3] > 0.5 and right[0, 3] < -0.5, dist
+        assert abs(ahead[0, 3]) < 1e-4
+    near = observe(member(blank(cfg), 0, (0.2, 0.15), heading=0.0, colony=0), cfg)
+    far = observe(member(blank(cfg), 0, (0.2, -0.1), heading=0.0, colony=0), cfg)
+    assert near[0, 2] > far[0, 2]  # nest nearby falls off with distance; direction does not
+    assert abs(near[0, 3] - far[0, 3]) < 0.1
 
 
 def test_neighbours_same_colony_same_cell_only():

@@ -7,14 +7,14 @@ import { familyColor } from "./families";
 
 // In protocol order. See engine/simlife/senses.py (observe) and brain.py (act).
 export const INPUT_NAMES = [
-  "food nearby", "food direction", "nest left", "nest right", "crowd", "heard",
+  "food nearby", "food direction", "nest nearby", "nest direction", "crowd", "heard",
   "territory left", "territory right", "foreigners",
   "carrying", "energy", "memory 0", "memory 1",
 ];
 export const ACTION_NAMES = ["turn", "speed", "signal", "memory 0", "memory 1", "aggression"];
 export const PREDICTED_NAMES = INPUT_NAMES.slice(0, 9);
 
-const INPUT_CODES = ["fN", "fD", "nL", "nR", "cr", "sh", "tL", "tR", "fo", "ca", "en", "m0", "m1"];
+const INPUT_CODES = ["fN", "fD", "nN", "nD", "cr", "sh", "tL", "tR", "fo", "ca", "en", "m0", "m1"];
 const ACTION_CODES = ["turn", "spd", "sig", "m0", "m1", "agg"];
 const HIDDEN_CODES = Array.from({ length: 8 }, (_, i) => `h${i}`);
 
