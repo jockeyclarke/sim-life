@@ -93,6 +93,8 @@
       #inspector h4 { font-size: 11px; font-weight: 400; color: var(--muted); margin: 0 0 3px; }
       #inspector .hint, #inspector .caption { color: var(--muted); font-size: 12px; margin: 4px 0; }
       #inspector .caption { margin-top: 10px; }
+      /* exactly two rows, never wrapping, so nothing below it moves */
+      #inspector .trace-note { white-space: pre; overflow: hidden; text-overflow: ellipsis; line-height: 1.35; height: 2.7em; }
       #inspector .who { font-variant-numeric: tabular-nums; }
       #inspector .colony { display: inline-block; width: 9px; height: 9px; border-radius: 50%; vertical-align: baseline; }
       #inspector canvas { display: block; max-width: 100%; }

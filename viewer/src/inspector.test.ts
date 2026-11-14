@@ -85,3 +85,13 @@ test("the fixture's inspection carries a selection identity", () => {
   const snap = decodeSnapshot(readFixture("snapshot.bin"));
   expect(snap.inspect?.selection).toBe(1);
 });
+
+import { traceCaption } from "./inspector";
+
+test("traceCaption always gives exactly two lines, so the panel below never jumps", () => {
+  expect(traceCaption([])).toEqual(["waiting for this member's", "first scored prediction"]);
+  expect(traceCaption([[1, 0.0191], [9, 0.0213]])).toEqual([
+    "running average, log scale",
+    "first seen 0.019 · now 0.021",
+  ]);
+});

@@ -99,12 +99,24 @@ def territory_sense(state: WorldState, points: Array, cfg: Config) -> Array:
     return jnp.tanh(own - foreign)
 
 
+def direction(left: Array, right: Array, gain: float) -> Array:
+    """Which side a scent is stronger on: tanh(gain * (left - right) / (left + right)).
+
+    Both sensors read nearly the same level, so the raw difference is tiny
+    and varies with how strong the scent is; the relative difference keeps
+    its size wherever the member is. 0 when there is no scent at all.
+    """
+    total = left + right
+    relative = jnp.where(total > 1e-6, (left - right) / jnp.maximum(total, 1e-6), 0.0)
+    return jnp.tanh(gain * relative)
+
+
 def observe(state: WorldState, cfg: Config) -> Array:
     """The (N, 13) input matrix. Column order is fixed, and the predicted
     senses come first so that obs[:, :n_predictions] selects them:
 
-    0 food scent left     1 food scent right
-    2 nest scent left     3 nest scent right
+    0 food nearby         1 food direction (+ left, - right)
+    2 nest nearby         3 nest direction (+ left, - right)
     4 crowd               5 signal heard
     6 territory left      7 territory right     8 foreign members nearby
     9 carrying            10 colony energy
@@ -113,11 +125,15 @@ def observe(state: WorldState, cfg: Config) -> Array:
     left, right = sensor_points(state.pos, state.heading, cfg)
     own_nest = state.nest[state.colony]
     crowd, heard = neighbour_stats(state, cfg)
+    food_left = food_scent(left, state.food_pos, state.food_alive, cfg)
+    food_right = food_scent(right, state.food_pos, state.food_alive, cfg)
+    nest_left = nest_scent(left, own_nest, cfg)
+    nest_right = nest_scent(right, own_nest, cfg)
     columns = [
-        jnp.tanh(food_scent(left, state.food_pos, state.food_alive, cfg)),
-        jnp.tanh(food_scent(right, state.food_pos, state.food_alive, cfg)),
-        nest_scent(left, own_nest, cfg),
-        nest_scent(right, own_nest, cfg),
+        jnp.tanh(food_left + food_right),
+        direction(food_left, food_right, cfg.food_direction_gain),
+        (nest_left + nest_right) / 2,
+        direction(nest_left, nest_right, cfg.nest_direction_gain),
         crowd,
         heard,
         territory_sense(state, left, cfg),

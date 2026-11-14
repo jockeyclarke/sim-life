@@ -49,8 +49,16 @@ class Config:
     max_turn: float = 0.5
     sensor_distance: float = 0.02
     sensor_angle: float = 0.6
-    food_scent_length: float = 0.08
+    # Short, so scent is local: the nearest food sets the direction, not
+    # the bulk of distant food. Direction stays readable far from food
+    # because it is a ratio of the two sensors.
+    food_scent_length: float = 0.03
+    food_direction_gain: float = 4.0
     nest_scent_length: float = 0.15
+    # For one source the relative difference is at most about
+    # sensor spacing / (2 * scent length): 0.38 for food, 0.08 for the nest.
+    # The gains bring both directions to about the same range.
+    nest_direction_gain: float = 20.0
     neighbour_grid: int = 32
     pickup_radius: float = 0.02
     nest_radius: float = 0.04

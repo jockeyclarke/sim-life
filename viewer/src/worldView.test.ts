@@ -65,3 +65,18 @@ test("errorLightness handles max of zero and non-finite values", () => {
   expect(Number.isFinite(errorLightness(0, 0, false))).toBe(true);
   expect(errorLightness(NaN, 1, false)).toBe(errorLightness(0, 1, false));
 });
+
+import { homeNest } from "./worldView";
+
+test("homeNest finds the selected member's colony among the nests, or null", () => {
+  const base = world([[0.5, 0.5, 7]]);
+  const snap: Snapshot = {
+    ...base,
+    arrays: { ...base.arrays, colony_slot: new Float32Array([4, 9, 2]) },
+    inspect: { slot: 7, alive: true, colony: 9 } as Snapshot["inspect"],
+  };
+  expect(homeNest(snap)).toBe(1);
+  expect(homeNest({ ...snap, inspect: { slot: 7, alive: true, colony: 5 } as Snapshot["inspect"] })).toBeNull();
+  expect(homeNest({ ...snap, inspect: null })).toBeNull();
+  expect(homeNest({ ...snap, inspect: { slot: 7, alive: false } as Snapshot["inspect"] })).toBeNull();
+});

@@ -7,14 +7,25 @@ import { familyColor } from "./families";
 
 // In protocol order. See engine/simlife/senses.py (observe) and brain.py (act).
 export const INPUT_NAMES = [
-  "food left", "food right", "nest left", "nest right", "crowd", "heard",
+  "food nearby", "food direction", "nest nearby", "nest direction", "crowd", "heard",
   "territory left", "territory right", "foreigners",
   "carrying", "energy", "memory 0", "memory 1",
 ];
-export const ACTION_NAMES = ["turn", "speed", "signal", "memory 0", "memory 1", "aggression"];
+/**
+ * The two lines under the error trace. Always two, each short enough not to
+ * wrap, so the panel below keeps its place as the numbers change.
+ */
+export function traceCaption(points: [number, number][]): [string, string] {
+  if (points.length === 0) return ["waiting for this member's", "first scored prediction"];
+  const first = points[0]![1];
+  const latest = points[points.length - 1]![1];
+  return ["running average, log scale", `first seen ${first.toPrecision(2)} · now ${latest.toPrecision(2)}`];
+}
+
+export const ACTION_NAMES =["turn", "speed", "signal", "memory 0", "memory 1", "aggression"];
 export const PREDICTED_NAMES = INPUT_NAMES.slice(0, 9);
 
-const INPUT_CODES = ["fL", "fR", "nL", "nR", "cr", "sh", "tL", "tR", "fo", "ca", "en", "m0", "m1"];
+const INPUT_CODES = ["fN", "fD", "nN", "nD", "cr", "sh", "tL", "tR", "fo", "ca", "en", "m0", "m1"];
 const ACTION_CODES = ["turn", "spd", "sig", "m0", "m1", "agg"];
 const HIDDEN_CODES = Array.from({ length: 8 }, (_, i) => `h${i}`);
 
@@ -162,7 +173,7 @@ export class Inspector {
   private readonly actions = new ValueList("Actions", ACTION_NAMES);
   private readonly bars = el("canvas");
   private readonly traceCanvas = el("canvas");
-  private readonly traceNote = el("p", { className: "hint" });
+  private readonly traceNote = el("p", { className: "hint trace-note" });
   private readonly readout = el("p", { className: "hint", textContent: "hover a weight to read it" });
   private readonly matrices: Matrix[];
 
@@ -376,13 +387,8 @@ export class Inspector {
     ctx.textAlign = "right";
     ctx.fillText(t1.toLocaleString("en-US"), pad.left + plotW, height - 8);
 
-    if (points.length === 0) {
-      this.traceNote.textContent = "waiting for this member's first scored prediction";
-      return;
-    }
-    const first = points[0]![1];
-    const latest = points[points.length - 1]![1];
-    this.traceNote.textContent = `running average, log scale · first seen ${first.toPrecision(2)}, now ${latest.toPrecision(2)}`;
+    this.traceNote.textContent = traceCaption(points).join("\n");
+    if (points.length === 0) return;
 
     ctx.strokeStyle = cssVar("--series");
     ctx.lineWidth = 2;

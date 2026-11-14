@@ -73,6 +73,15 @@ export function pickMember(snap: Snapshot, x: number, y: number, size: number, r
   return best;
 }
 
+/** Index into the colony arrays of the selected member's home nest, or null. */
+export function homeNest(snap: Snapshot): number | null {
+  const inspect = snap.inspect;
+  const slots = snap.arrays.colony_slot;
+  if (!inspect?.alive || !slots) return null;
+  const k = slots.indexOf(inspect.colony);
+  return k >= 0 ? k : null;
+}
+
 const TWO_PI = Math.PI * 2;
 
 export function drawWorld(
@@ -123,6 +132,34 @@ export function drawWorld(
     ctx.stroke();
   }
   ctx.setLineDash([]);
+
+  // The selected member's home: a bold ring round its nest, and a faint line
+  // to it the short way round (it may run off one edge and in at the other).
+  const home = homeNest(snap);
+  const memberSlots = a.member_slot;
+  const at = home === null || !memberSlots ? -1 : memberSlots.indexOf(snap.inspect!.slot);
+  if (home !== null) {
+    const [nx, ny] = worldToCanvas(nests[2 * home]!, nests[2 * home + 1]!, size);
+    ctx.save();
+    ctx.strokeStyle = theme.text;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(nx, ny, 11 + Math.sqrt(colonyMembers[home]!), 0, TWO_PI);
+    ctx.stroke();
+    if (at >= 0) {
+      const mp = a.member_pos!;
+      const wrap = (d: number) => d - Math.round(d);
+      const [mx, my] = worldToCanvas(mp[2 * at]!, mp[2 * at + 1]!, size);
+      ctx.globalAlpha = 0.4;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(mx, my);
+      ctx.lineTo(mx + wrap(nests[2 * home]! - mp[2 * at]!) * size, my + wrap(nests[2 * home + 1]! - mp[2 * at + 1]!) * size);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
 
   // Members: a short mark pointing along the heading, with a dot at the head when carrying.
   const pos = a.member_pos ?? new Float32Array();
