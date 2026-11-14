@@ -202,7 +202,7 @@ never knows its map coordinates.
 
 | Sense | Values | Predicted? |
 |---|---|---|
-| Food scent, left and right | 2 | yes |
+| Food nearby (both sensors' scent summed) and food direction (their relative difference: + left, − right) | 2 | yes |
 | Nest scent, left and right | 2 | yes |
 | Territory, left and right: own family's scent minus all others' (stage 3) | 2 | yes |
 | Foreign members nearby (stage 3) | 1 | yes |
@@ -215,7 +215,12 @@ never knows its map coordinates.
 10 inputs in stages 1 and 2, 13 in stage 3.
 
 "Left and right" means two sample points offset to either side of the
-entity's heading, so it can steer by comparing them.
+entity's heading, so it can steer by comparing them. Food is the exception
+(revised after stage 3): its scent sums over every pellet, so both points read
+nearly the same high value and the useful difference is tiny. The network is
+therefore given the total and the relative difference,
+tanh(4 · (left − right) / (left + right)), which keeps its size wherever the
+member is.
 
 ### Outputs
 

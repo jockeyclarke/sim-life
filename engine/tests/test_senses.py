@@ -11,10 +11,24 @@ def test_wrap_delta_takes_short_way_round():
     assert jnp.allclose(d, jnp.array([0.10, 0.0]), atol=1e-6)
 
 
-def test_food_on_the_left_smells_stronger_on_the_left():
-    s = food(member(blank(cfg), 0, (0.5, 0.5), heading=0.0), 0, (0.5, 0.56))
-    obs = observe(s, cfg)
-    assert obs[0, 0] > obs[0, 1] > 0
+def test_food_direction_is_positive_left_negative_right_and_zero_ahead():
+    # heading 0 (along +x): the left sensor is at larger y
+    me = member(blank(cfg), 0, (0.5, 0.5), heading=0.0)
+    left = observe(food(me, 0, (0.5, 0.56)), cfg)
+    right = observe(food(me, 0, (0.5, 0.44)), cfg)
+    ahead = observe(food(me, 0, (0.56, 0.5)), cfg)
+    assert left[0, 1] > 0.2 and right[0, 1] < -0.2
+    assert jnp.isclose(left[0, 1], -right[0, 1], atol=1e-5)
+    assert jnp.abs(ahead[0, 1]) < 1e-5
+    assert left[0, 0] > 0 and jnp.isclose(left[0, 0], right[0, 0], atol=1e-5)  # amount ignores side
+
+
+def test_food_direction_does_not_depend_on_how_much_food_there_is():
+    me = member(blank(cfg), 0, (0.5, 0.5), heading=0.0)
+    one = observe(food(me, 0, (0.5, 0.56)), cfg)
+    two = observe(food(food(me, 0, (0.5, 0.56)), 1, (0.5, 0.56)), cfg)
+    assert jnp.isclose(one[0, 1], two[0, 1], atol=1e-5)
+    assert two[0, 0] > one[0, 0]  # but more food nearby reads as more
 
 
 def test_dead_food_has_no_scent():

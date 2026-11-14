@@ -103,7 +103,7 @@ def observe(state: WorldState, cfg: Config) -> Array:
     """The (N, 13) input matrix. Column order is fixed, and the predicted
     senses come first so that obs[:, :n_predictions] selects them:
 
-    0 food scent left     1 food scent right
+    0 food nearby         1 food direction (+ left, - right)
     2 nest scent left     3 nest scent right
     4 crowd               5 signal heard
     6 territory left      7 territory right     8 foreign members nearby
@@ -113,9 +113,17 @@ def observe(state: WorldState, cfg: Config) -> Array:
     left, right = sensor_points(state.pos, state.heading, cfg)
     own_nest = state.nest[state.colony]
     crowd, heard = neighbour_stats(state, cfg)
+    food_left = food_scent(left, state.food_pos, state.food_alive, cfg)
+    food_right = food_scent(right, state.food_pos, state.food_alive, cfg)
+    food_total = food_left + food_right
+    # Scent sums over every pellet, so both sensors read nearly the same; the
+    # direction is the relative difference, which doesn't depend on the total.
+    food_direction = jnp.where(
+        food_total > 1e-6, (food_left - food_right) / jnp.maximum(food_total, 1e-6), 0.0
+    )
     columns = [
-        jnp.tanh(food_scent(left, state.food_pos, state.food_alive, cfg)),
-        jnp.tanh(food_scent(right, state.food_pos, state.food_alive, cfg)),
+        jnp.tanh(food_total),
+        jnp.tanh(cfg.food_direction_gain * food_direction),
         nest_scent(left, own_nest, cfg),
         nest_scent(right, own_nest, cfg),
         crowd,

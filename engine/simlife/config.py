@@ -50,6 +50,8 @@ class Config:
     sensor_distance: float = 0.02
     sensor_angle: float = 0.6
     food_scent_length: float = 0.08
+    # food direction input = tanh(gain * (left - right) / (left + right))
+    food_direction_gain: float = 4.0
     nest_scent_length: float = 0.15
     neighbour_grid: int = 32
     pickup_radius: float = 0.02
