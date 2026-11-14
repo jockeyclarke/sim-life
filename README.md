@@ -113,7 +113,9 @@ is two steps:
   or what its parent was born with. Both switches can be flipped mid-run;
   each flip is marked on the charts and recorded in the run's history.
 - **Colour members** by family (the default), colony, carrying food,
-  prediction error, or aggression.
+  prediction error, or aggression. **Food in transit** shows only the
+  carriers, each leaving a fading trail, with everyone else as a faint dot,
+  so you can watch food flow from the field into the nests.
 - **Inspector.** Click a member to select it; click empty space to clear.
   The panel shows what it senses, its hidden activations and actions this
   tick, its last prediction against what happened, its prediction error

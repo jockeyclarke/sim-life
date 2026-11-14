@@ -1,7 +1,7 @@
 import { drawTerritory, familyColor, familyDash } from "./families";
 import type { Snapshot } from "./protocol";
 
-export type ColorMode = "family" | "colony" | "carrying" | "error" | "aggression";
+export type ColorMode = "family" | "colony" | "carrying" | "food" | "error" | "aggression";
 
 export interface Theme {
   background: string;
@@ -82,6 +82,7 @@ export function drawWorld(
   mode: ColorMode,
   theme: Theme,
   shadeTerritory = false,
+  trails: CanvasImageSource | null = null,
 ): void {
   const a = snap.arrays;
   ctx.fillStyle = theme.background;
@@ -101,6 +102,9 @@ export function drawWorld(
     ctx.arc(x, y, 1.5, 0, TWO_PI);
   }
   ctx.fill();
+
+  // "food" mode: the fading paths carriers have taken, under everything that moves
+  if (mode === "food" && trails) ctx.drawImage(trails, 0, 0, size, size);
 
   // Nests: a ring per colony, growing with its member count.
   const nests = a.colony_nest ?? new Float32Array();
@@ -138,6 +142,14 @@ export function drawWorld(
     const dx = Math.cos(heading[i]!) * length;
     const dy = Math.sin(heading[i]!) * length;
     const isCarrying = carrying[i]! > 0.5;
+    if (mode === "food" && !isCarrying && slots[i] !== selected) {
+      // everyone not moving food recedes to a faint dot
+      ctx.fillStyle = theme.muted;
+      ctx.globalAlpha = 0.35;
+      ctx.fillRect(x - 1, y - 1, 2, 2);
+      ctx.globalAlpha = 1;
+      continue;
+    }
     const color =
       mode === "colony" || (mode === "family" && !memberFamily)
         ? colonyColor(colony[i]!)
@@ -147,7 +159,7 @@ export function drawWorld(
             ? aggressionColor(aggression?.[i] ?? 0, theme.dark)
             : mode === "error"
           ? errorColor(errors[i] ?? 0, errorMax, theme.dark)
-          : isCarrying
+          : isCarrying || mode === "food"
             ? theme.accent
             : theme.muted;
     ctx.strokeStyle = color;
@@ -166,8 +178,7 @@ export function drawWorld(
       ctx.restore();
     }
     if (isCarrying) {
-      ctx.fillStyle = mode === "carrying" ? theme.accent : theme.food;
-      ctx.beginPath();
+      ctx.fillStyle = mode === "carrying" ? theme.accent : theme.food;      ctx.beginPath();
       ctx.arc(x + dx / 2, y + dy / 2, 2, 0, TWO_PI);
       ctx.fill();
     }

@@ -75,6 +75,7 @@ export function mountControls(
     el("option", { value: "family", textContent: "by family" }),
     el("option", { value: "colony", textContent: "by colony" }),
     el("option", { value: "carrying", textContent: "by carrying food" }),
+    el("option", { value: "food", textContent: "food in transit (carriers and trails)" }),
     el("option", { value: "error", textContent: "by prediction error" }),
     el("option", { value: "aggression", textContent: "by aggression" }),
   ]);
