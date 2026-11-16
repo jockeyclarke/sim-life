@@ -110,3 +110,15 @@ test("barExtent never shrinks below the range already reached", () => {
   expect(barExtent([0.3], 1.5)).toBe(1.5); // back inside: the axis holds
   expect(barExtent([2.2], 1.5)).toBe(2.5); // further out: it grows
 });
+
+import { errorBand } from "./inspector";
+
+test("errorBand: low below 0.05, warn up to 0.25, high from there", () => {
+  expect(errorBand(0)).toBe("low");
+  expect(errorBand(0.0499)).toBe("low");
+  expect(errorBand(0.05)).toBe("warn");
+  expect(errorBand(0.2499)).toBe("warn");
+  expect(errorBand(0.25)).toBe("high");
+  expect(errorBand(3)).toBe("high");
+  expect(errorBand(Number.NaN)).toBe("low");
+});

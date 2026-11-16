@@ -26,6 +26,15 @@ export function barExtent(values: number[], previous = 1): number {
   return Math.max(previous, 1, Math.ceil(largest * 2) / 2);
 }
 
+/** Squared-error thresholds: a miss of about 0.22 is "warn", of 0.5 or more "high". */
+export const ERROR_WARN = 0.05;
+export const ERROR_HIGH = 0.25;
+
+export function errorBand(squared: number): "low" | "warn" | "high" {
+  if (!(squared >= ERROR_WARN)) return "low"; // NaN reads as low
+  return squared >= ERROR_HIGH ? "high" : "warn";
+}
+
 export function traceCaption(points: [number, number][]): [string, string] {
   if (points.length === 0) return ["waiting for this member's", "first scored prediction"];
   const first = points[0]![1];
@@ -354,9 +363,20 @@ export class Inspector {
       bar(predicted, y + 3, predictedColor, true);
       bar(actual, y + 13, actualColor, false);
 
-      ctx.fillStyle = text;
+      const squared = (predicted - actual) ** 2;
+      const label = squared.toFixed(4);
+      const band = errorBand(squared);
+      if (band !== "low") {
+        // a yellow or red chip behind the number; the text stays dark on both
+        const w = ctx.measureText(label).width + 8;
+        ctx.fillStyle = cssVar(band === "high" ? "--error-high" : "--error-warn");
+        ctx.beginPath();
+        ctx.roundRect(width - w, y + rowH / 2 - 8, w, 16, 3);
+        ctx.fill();
+      }
+      ctx.fillStyle = band === "low" ? text : "#1a1a1a";
       ctx.textAlign = "right";
-      ctx.fillText(((predicted - actual) ** 2).toFixed(4), width, y + rowH / 2);
+      ctx.fillText(label, band === "low" ? width : width - 4, y + rowH / 2);
     });
   }
 
