@@ -22,6 +22,7 @@ class WorldState(NamedTuple):
     alive: Array  # (N,) bool
     colony: Array  # (N,) i32 colony slot
     carrying: Array  # (N,) bool
+    carry_ticks: Array  # (N,) i32 ticks the food now carried has been held; 0 when not carrying
     age: Array  # (N,) i32 ticks
     lifespan: Array  # (N,) i32 ticks
     memory: Array  # (N, 2) f32, written by the network last tick
@@ -153,6 +154,7 @@ def init_world(key: Array, cfg: Config, founders: dict | None = None) -> WorldSt
         alive=alive,
         colony=colony,
         carrying=jnp.zeros(N, bool),
+        carry_ticks=jnp.zeros(N, jnp.int32),
         age=age,
         lifespan=lifespan,
         memory=jnp.zeros((N, 2)),

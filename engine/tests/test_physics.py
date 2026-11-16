@@ -77,3 +77,20 @@ def test_metabolise_charges_colony_pool():
     s2 = metabolise(s, speed, dataclasses.replace(cfg, upkeep_rate=0.0))  # upkeep is tested in test_territory
     assert jnp.isclose(s2.energy[0], 10.0 - (2 * cfg.base_cost + cfg.speed_cost))
     assert s2.energy[1] == 10.0
+
+
+def test_carried_food_spoils_with_half_life():
+    # colony 0's nest is at (0.2, 0.2); a pellet carried one half-life is worth half
+    fresh = deliver(member(blank(cfg), 0, (0.2, 0.2), colony=0, carrying=True), cfg)
+    assert jnp.isclose(fresh.energy[0], 10.0 + cfg.food_energy)
+    old = member(blank(cfg), 0, (0.2, 0.2), colony=0, carrying=True, carry_ticks=cfg.food_half_life)
+    assert jnp.isclose(deliver(old, cfg).energy[0], 10.0 + cfg.food_energy / 2, atol=1e-4)
+
+
+def test_carry_ticks_count_while_carrying_and_reset_otherwise():
+    s = member(blank(cfg), 0, (0.5, 0.5), colony=0, carrying=True, carry_ticks=7)
+    s = member(s, 1, (0.6, 0.6), colony=0, carry_ticks=9)  # not carrying: stale count
+    s = deliver(s, cfg)  # away from the nest, so nothing is dropped
+    assert int(s.carry_ticks[0]) == 8 and int(s.carry_ticks[1]) == 0
+    home = deliver(member(blank(cfg), 0, (0.2, 0.2), colony=0, carrying=True, carry_ticks=5), cfg)
+    assert int(home.carry_ticks[0]) == 0  # dropped off: the count starts over

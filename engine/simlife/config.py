@@ -66,7 +66,11 @@ class Config:
     # Energy.
     food_energy: float = 10.0
     base_cost: float = 0.001
-    speed_cost: float = 0.004
+    speed_cost: float = 0.015  # full speed costs 16x resting, so speed must earn its keep
+    # Carried food spoils: delivered after this many ticks in transit it is
+    # worth half, after twice as many a quarter. A carrier that hurries home
+    # pays its colony more than one that dawdles or hoards.
+    food_half_life: int = 150
     birth_cost: float = 4.0
     reserve_per_member: float = 2.0
 

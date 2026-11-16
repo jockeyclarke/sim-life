@@ -133,6 +133,7 @@ def grow(state: WorldState, cfg: Config, key: Array) -> WorldState:
         ),
         colony=put(state.colony, jnp.arange(C, dtype=jnp.int32)),
         carrying=put(state.carrying, jnp.zeros(C, bool)),
+        carry_ticks=put(state.carry_ticks, jnp.zeros(C, jnp.int32)),
         age=put(state.age, jnp.zeros(C, jnp.int32)),
         lifespan=put(state.lifespan, random_lifespan(k_life, (C,), cfg)),
         memory=put(state.memory, jnp.zeros((C, 2))),

@@ -48,17 +48,24 @@ def pickup(state: WorldState, cfg: Config) -> WorldState:
 
 
 def deliver(state: WorldState, cfg: Config) -> WorldState:
-    """A carrying member at its own nest drops its food into the colony pool."""
+    """A carrying member at its own nest drops its food into the colony pool.
+
+    Food spoils in transit: it pays food_energy * 0.5 ** (ticks carried /
+    food_half_life). Afterwards the carry count ticks on for whoever still
+    carries and is zero for everyone else.
+    """
     own_nest = state.nest[state.colony]
     at_nest = torus_distance(state.pos, own_nest) <= cfg.nest_radius
     drops = state.alive & state.carrying & at_nest
     gained = jax.ops.segment_sum(
-        drops.astype(jnp.float32) * cfg.food_energy,
+        drops * cfg.food_energy * 0.5 ** (state.carry_ticks / cfg.food_half_life),
         state.colony,
         num_segments=cfg.capacity_colonies,
     )
+    still = state.carrying & ~drops
     return state._replace(
-        carrying=state.carrying & ~drops,
+        carrying=still,
+        carry_ticks=jnp.where(still, state.carry_ticks + 1, 0),
         energy=state.energy + gained,
         delivered_total=state.delivered_total + drops.sum().astype(jnp.int32),
     )
