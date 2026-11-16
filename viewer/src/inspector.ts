@@ -15,6 +15,16 @@ export const INPUT_NAMES = [
  * The two lines under the error trace. Always two, each short enough not to
  * wrap, so the panel below keeps its place as the numbers change.
  */
+/**
+ * Half-width of the prediction bars' axis, which always runs -extent..+extent so
+ * zero stays in the middle. It is 1 (inputs are mostly in -1..1) and grows in
+ * steps of 0.5 only when a value goes beyond, so the scale rarely moves.
+ */
+export function barExtent(values: number[]): number {
+  const largest = Math.max(0, ...values.filter(Number.isFinite).map(Math.abs));
+  return Math.max(1, Math.ceil(largest * 2) / 2);
+}
+
 export function traceCaption(points: [number, number][]): [string, string] {
   if (points.length === 0) return ["waiting for this member's", "first scored prediction"];
   const first = points[0]![1];
@@ -294,9 +304,8 @@ export class Inspector {
     const predictedColor = cssVar("--series");
     const actualColor = cssVar("--overlay");
 
-    const all = [...inspect.predicted, ...inspect.actual, 0, 1];
-    const lo = Math.min(...all);
-    const hi = Math.max(...all);
+    const hi = barExtent([...inspect.predicted, ...inspect.actual]);
+    const lo = -hi;
     const x0 = labelW;
     const plotW = Math.max(10, width - labelW - errorW);
     const xOf = (v: number) => x0 + ((v - lo) / (hi - lo)) * plotW;
@@ -304,9 +313,7 @@ export class Inspector {
     // axis: zero line and end labels
     ctx.strokeStyle = cssVar("--line");
     ctx.lineWidth = 1;
-    // label the left end only when it's clear of the zero line, or the two labels collide
-    const labelled = lo < 0 && xOf(0) - xOf(lo) > 28 ? [lo, 0, hi] : [0, hi];
-    for (const v of labelled) {
+    for (const v of [lo, 0, hi]) {
       const x = Math.round(xOf(v)) + 0.5;
       ctx.beginPath();
       ctx.moveTo(x, 0);
