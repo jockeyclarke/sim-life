@@ -15,6 +15,26 @@ export const INPUT_NAMES = [
  * The two lines under the error trace. Always two, each short enough not to
  * wrap, so the panel below keeps its place as the numbers change.
  */
+/**
+ * Half-width of the prediction bars' axis, which always runs -extent..+extent so
+ * zero stays in the middle. It starts at 1 (inputs are mostly in -1..1), grows
+ * in steps of 0.5 when a value goes beyond, and never shrinks below `previous`:
+ * the axis holds the largest value seen since the member was selected.
+ */
+export function barExtent(values: number[], previous = 1): number {
+  const largest = Math.max(0, ...values.filter(Number.isFinite).map(Math.abs));
+  return Math.max(previous, 1, Math.ceil(largest * 2) / 2);
+}
+
+/** Squared-error thresholds: a miss of about 0.22 is "warn", of 0.5 or more "high". */
+export const ERROR_WARN = 0.05;
+export const ERROR_HIGH = 0.25;
+
+export function errorBand(squared: number): "low" | "warn" | "high" {
+  if (!(squared >= ERROR_WARN)) return "low"; // NaN reads as low
+  return squared >= ERROR_HIGH ? "high" : "warn";
+}
+
 export function traceCaption(points: [number, number][]): [string, string] {
   if (points.length === 0) return ["waiting for this member's", "first scored prediction"];
   const first = points[0]![1];
@@ -164,6 +184,8 @@ export class Inspector {
   private selection: number | null = null;
   private showChange = false;
   private last: Inspection | null = null;
+  /** the prediction bars' half-range: the largest value seen for this selection */
+  private barRange = 1;
 
   private readonly message = el("p", { className: "hint" });
   private readonly body = el("div");
@@ -236,6 +258,7 @@ export class Inspector {
       this.trace.clear();
       this.baseline = null;
       this.last = null;
+      this.barRange = 1;
     }
     if (family !== null) this.family = family;
     if (inspect === null) {
@@ -294,9 +317,8 @@ export class Inspector {
     const predictedColor = cssVar("--series");
     const actualColor = cssVar("--overlay");
 
-    const all = [...inspect.predicted, ...inspect.actual, 0, 1];
-    const lo = Math.min(...all);
-    const hi = Math.max(...all);
+    const hi = (this.barRange = barExtent([...inspect.predicted, ...inspect.actual], this.barRange));
+    const lo = -hi;
     const x0 = labelW;
     const plotW = Math.max(10, width - labelW - errorW);
     const xOf = (v: number) => x0 + ((v - lo) / (hi - lo)) * plotW;
@@ -304,9 +326,7 @@ export class Inspector {
     // axis: zero line and end labels
     ctx.strokeStyle = cssVar("--line");
     ctx.lineWidth = 1;
-    // label the left end only when it's clear of the zero line, or the two labels collide
-    const labelled = lo < 0 && xOf(0) - xOf(lo) > 28 ? [lo, 0, hi] : [0, hi];
-    for (const v of labelled) {
+    for (const v of [lo, 0, hi]) {
       const x = Math.round(xOf(v)) + 0.5;
       ctx.beginPath();
       ctx.moveTo(x, 0);
@@ -343,9 +363,20 @@ export class Inspector {
       bar(predicted, y + 3, predictedColor, true);
       bar(actual, y + 13, actualColor, false);
 
-      ctx.fillStyle = text;
+      const squared = (predicted - actual) ** 2;
+      const label = squared.toFixed(4);
+      const band = errorBand(squared);
+      if (band !== "low") {
+        // a yellow or red chip behind the number; the text stays dark on both
+        const w = ctx.measureText(label).width + 8;
+        ctx.fillStyle = cssVar(band === "high" ? "--error-high" : "--error-warn");
+        ctx.beginPath();
+        ctx.roundRect(width - w, y + rowH / 2 - 8, w, 16, 3);
+        ctx.fill();
+      }
+      ctx.fillStyle = band === "low" ? text : "#1a1a1a";
       ctx.textAlign = "right";
-      ctx.fillText(((predicted - actual) ** 2).toFixed(4), width, y + rowH / 2);
+      ctx.fillText(label, band === "low" ? width : width - 4, y + rowH / 2);
     });
   }
 

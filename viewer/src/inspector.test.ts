@@ -95,3 +95,30 @@ test("traceCaption always gives exactly two lines, so the panel below never jump
     "first seen 0.019 · now 0.021",
   ]);
 });
+
+import { barExtent } from "./inspector";
+
+test("barExtent keeps zero centred at ±1 unless a value goes beyond, then steps in halves", () => {
+  expect(barExtent([0.2, -0.7, 0.05])).toBe(1);
+  expect(barExtent([0.01, 0.02])).toBe(1); // small values don't zoom in
+  expect(barExtent([1.2, -0.3])).toBe(1.5);
+  expect(barExtent([-2.1])).toBe(2.5);
+  expect(barExtent([Number.NaN, 0.4])).toBe(1);
+});
+
+test("barExtent never shrinks below the range already reached", () => {
+  expect(barExtent([0.3], 1.5)).toBe(1.5); // back inside: the axis holds
+  expect(barExtent([2.2], 1.5)).toBe(2.5); // further out: it grows
+});
+
+import { errorBand } from "./inspector";
+
+test("errorBand: low below 0.05, warn up to 0.25, high from there", () => {
+  expect(errorBand(0)).toBe("low");
+  expect(errorBand(0.0499)).toBe("low");
+  expect(errorBand(0.05)).toBe("warn");
+  expect(errorBand(0.2499)).toBe("warn");
+  expect(errorBand(0.25)).toBe("high");
+  expect(errorBand(3)).toBe("high");
+  expect(errorBand(Number.NaN)).toBe("low");
+});
