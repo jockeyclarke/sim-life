@@ -17,12 +17,13 @@ export const INPUT_NAMES = [
  */
 /**
  * Half-width of the prediction bars' axis, which always runs -extent..+extent so
- * zero stays in the middle. It is 1 (inputs are mostly in -1..1) and grows in
- * steps of 0.5 only when a value goes beyond, so the scale rarely moves.
+ * zero stays in the middle. It starts at 1 (inputs are mostly in -1..1), grows
+ * in steps of 0.5 when a value goes beyond, and never shrinks below `previous`:
+ * the axis holds the largest value seen since the member was selected.
  */
-export function barExtent(values: number[]): number {
+export function barExtent(values: number[], previous = 1): number {
   const largest = Math.max(0, ...values.filter(Number.isFinite).map(Math.abs));
-  return Math.max(1, Math.ceil(largest * 2) / 2);
+  return Math.max(previous, 1, Math.ceil(largest * 2) / 2);
 }
 
 export function traceCaption(points: [number, number][]): [string, string] {
@@ -174,6 +175,8 @@ export class Inspector {
   private selection: number | null = null;
   private showChange = false;
   private last: Inspection | null = null;
+  /** the prediction bars' half-range: the largest value seen for this selection */
+  private barRange = 1;
 
   private readonly message = el("p", { className: "hint" });
   private readonly body = el("div");
@@ -246,6 +249,7 @@ export class Inspector {
       this.trace.clear();
       this.baseline = null;
       this.last = null;
+      this.barRange = 1;
     }
     if (family !== null) this.family = family;
     if (inspect === null) {
@@ -304,7 +308,7 @@ export class Inspector {
     const predictedColor = cssVar("--series");
     const actualColor = cssVar("--overlay");
 
-    const hi = barExtent([...inspect.predicted, ...inspect.actual]);
+    const hi = (this.barRange = barExtent([...inspect.predicted, ...inspect.actual], this.barRange));
     const lo = -hi;
     const x0 = labelW;
     const plotW = Math.max(10, width - labelW - errorW);

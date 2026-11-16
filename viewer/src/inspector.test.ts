@@ -105,3 +105,8 @@ test("barExtent keeps zero centred at ±1 unless a value goes beyond, then steps
   expect(barExtent([-2.1])).toBe(2.5);
   expect(barExtent([Number.NaN, 0.4])).toBe(1);
 });
+
+test("barExtent never shrinks below the range already reached", () => {
+  expect(barExtent([0.3], 1.5)).toBe(1.5); // back inside: the axis holds
+  expect(barExtent([2.2], 1.5)).toBe(2.5); // further out: it grows
+});
